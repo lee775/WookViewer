@@ -109,9 +109,11 @@ class HwpDocumentRenderer @Inject constructor(
         HwpTextRenderer.render(page, targetWidthPx, index)
     }
 
-    override suspend fun close(handle: DocumentHandle) = withContext(Dispatchers.IO) {
+    override suspend fun close(handle: DocumentHandle) {
         val h = handle as Handle
-        runCatching { h.tempFile.delete() }
+        withContext(Dispatchers.IO) {
+            runCatching { h.tempFile.delete() }
+        }
     }
 
     // ---- 내부 ----
@@ -160,6 +162,7 @@ class HwpDocumentRenderer @Inject constructor(
             kr.dogfoot.hwpxlib.tool.textextractor.TextExtractor.extract(
                 doc,
                 kr.dogfoot.hwpxlib.tool.textextractor.TextExtractMethod.InsertControlTextBetweenParagraphText,
+                /* insertParaHead = */ true,
                 kr.dogfoot.hwpxlib.tool.textextractor.TextMarks()
             )
         }

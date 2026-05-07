@@ -95,11 +95,13 @@ class PdfDocumentRenderer @Inject constructor(
         }
     }
 
-    override suspend fun close(handle: DocumentHandle) = withContext(Dispatchers.IO) {
+    override suspend fun close(handle: DocumentHandle) {
         val h = handle as Handle
-        h.mutex.withLock {
-            runCatching { h.renderer.close() }
-            runCatching { h.pfd.close() }
+        withContext(Dispatchers.IO) {
+            h.mutex.withLock {
+                runCatching { h.renderer.close() }
+                runCatching { h.pfd.close() }
+            }
         }
     }
 
