@@ -8,6 +8,9 @@ import com.wook.viewer.domain.model.PageSize
 import com.wook.viewer.domain.model.RenderedPage
 import com.wook.viewer.domain.repository.DocumentHandle
 import com.wook.viewer.domain.repository.DocumentRenderer
+import com.wook.viewer.render.text.TextPage
+import com.wook.viewer.render.text.TextPageRenderer
+import com.wook.viewer.render.text.TextPaginator
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -42,7 +45,7 @@ class HwpDocumentRenderer @Inject constructor(
     private class Handle(
         override val uri: Uri,
         val tempFile: File,
-        val pages: List<HwpPage>,
+        val pages: List<TextPage>,
         val variant: HwpVariant
     ) : DocumentHandle
 
@@ -64,7 +67,7 @@ class HwpDocumentRenderer @Inject constructor(
             temp.delete()
             throw classifyHwpError(t)
         }
-        val pages = HwpPaginator.paginate(text)
+        val pages = TextPaginator.paginate(text)
         Timber.d("HWP 열기 완료: variant=$variant, pages=${pages.size}, chars=${text.length}")
         Handle(uri, temp, pages, variant)
     }
@@ -104,9 +107,9 @@ class HwpDocumentRenderer @Inject constructor(
     ): RenderedPage = withContext(Dispatchers.Default) {
         val h = handle as Handle
         val page = h.pages.getOrElse(index) {
-            HwpPage("(잘못된 페이지 인덱스: $index)")
+            TextPage("(잘못된 페이지 인덱스: $index)")
         }
-        HwpTextRenderer.render(page, targetWidthPx, index)
+        TextPageRenderer.render(page, targetWidthPx, index)
     }
 
     override suspend fun close(handle: DocumentHandle) {

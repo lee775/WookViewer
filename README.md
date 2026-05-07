@@ -2,21 +2,28 @@
 
 PDF · DOCX · PPTX · HWP/HWPX 문서를 모바일에서 보기 위한 Android 뷰어 앱.
 
-## 현재 상태 (v0.2.0 — Option A 출시 준비)
+## 현재 상태 (v0.3.0 — DOCX 추가)
 
 | 포맷 | 상태 |
 |---|---|
 | PDF | ✅ FULL — 원본과 동일 (`PdfRenderer`) |
-| HWP / HWPX | ✅ TEXT_ONLY — 텍스트 미리보기 모드 (UI에 한계 안내) |
-| DOCX | ⏳ 예정 (v0.3) |
+| HWP / HWPX | ✅ TEXT_ONLY — 텍스트 미리보기 모드 |
+| DOCX | ✅ TEXT_ONLY — **외부 라이브러리 0개**, 자체 ZIP+XML 파싱 |
+| DOC (구형) | 🚫 명시적 미지원 — UI에서 "구형 바이너리 형식" 메시지 |
 | PPTX | ⏳ 예정 (v0.4) |
 
+### v0.3 변경사항
+- **DOCX 텍스트 추출** — Apache POI 미사용. `java.util.zip` + `javax.xml SAX`만으로 구현 → APK 사이즈 +0KB
+- 표 → 셀 tab + 행 newline으로 평탄화
+- `.doc` 파일은 명시적으로 `UnsupportedVariant` 던지기 (혼동 방지)
+- HWP에 있던 페이지네이션/Bitmap 렌더 코드를 `render/text/`로 추출 — 모든 TEXT_ONLY 포맷이 공유
+- v0.2 안내 배너가 DOCX에도 자동 적용
+
 ### v0.2 변경사항 (Option A)
-- HWP 뷰어 상단에 **"텍스트 미리보기 모드"** 안내 배너
+- HWP/DOCX 뷰어 상단에 **"텍스트 미리보기 모드"** 안내 배너
 - "자세히" 다이얼로그 — 표/이미지/서식/페이지 한계 4개 항목 명시
 - 분류된 에러 메시지 (암호화/손상/I/O/지원불가/알수없음)
-- 포맷별 로딩 메시지 ("한글 문서 분석 중...")
-- 도메인 모델에 `RenderingFidelity` 추가 — 향후 포맷도 같은 메커니즘으로 안내
+- 포맷별 로딩 메시지
 
 상세는 [HWP PoC 보고서](docs/HWP_POC_REPORT.md) 참조.
 

@@ -1,4 +1,4 @@
-package com.wook.viewer.render.hwp
+package com.wook.viewer.render.text
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -11,18 +11,16 @@ import android.text.TextPaint
 import com.wook.viewer.domain.model.RenderedPage
 
 /**
- * HWP 페이지(논리 단위) 1개를 Bitmap으로 그린다.
- * PoC 단계: 텍스트만 그리며 표/이미지/도형은 무시.
+ * TextPage 1개를 A4 비율 Bitmap으로 그린다.
+ * 시스템 기본 Typeface 사용 — Android의 한글 fallback이 자동 처리.
  *
- * 시스템 기본 Typeface를 사용 — 디바이스에 한글 폰트가 없어도
- * Android가 Noto CJK 또는 Roboto Fallback으로 처리.
+ * 모든 TEXT_ONLY 포맷(HWP/DOCX/...) 공통.
  */
-internal object HwpTextRenderer {
+internal object TextPageRenderer {
 
-    /** A4 비율 (595:842 ≈ 0.707) */
     private const val A4_RATIO = 842f / 595f
 
-    fun render(page: HwpPage, targetWidthPx: Int, index: Int): RenderedPage {
+    fun render(page: TextPage, targetWidthPx: Int, index: Int): RenderedPage {
         val w = targetWidthPx.coerceAtLeast(320)
         val h = (w * A4_RATIO).toInt()
 
