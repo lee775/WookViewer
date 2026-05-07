@@ -34,11 +34,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.wook.viewer.R
+import com.wook.viewer.app.BuildInfo
 import com.wook.viewer.domain.model.RecentDocument
 import java.text.DateFormat
 import java.util.Date
@@ -72,8 +74,22 @@ fun FileListScreen(
         }
     }
 
+    val ctx = LocalContext.current
+    val buildLabel = remember { BuildInfo.displayLabel(ctx) }
+
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.title_recent)) }) },
+        topBar = {
+            TopAppBar(title = {
+                Column {
+                    Text(stringResource(R.string.title_recent))
+                    Text(
+                        text = buildLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            })
+        },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             ExtendedFloatingActionButton(

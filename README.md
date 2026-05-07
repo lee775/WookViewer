@@ -34,6 +34,10 @@ PDF · DOCX · PPTX · HWP/HWPX 문서를 모바일에서 보기 위한 Android 
 
 상세는 [HWP PoC 보고서](docs/HWP_POC_REPORT.md) 참조.
 
+## 실기기 검증
+
+설치 + 4종 포맷별 체크리스트: [docs/REAL_DEVICE_TESTING.md](docs/REAL_DEVICE_TESTING.md)
+
 ## 빌드
 
 ```bash
