@@ -1,0 +1,22 @@
+# Default: text auto-normalize
+* text=auto eol=lf
+
+# Bash/Unix scripts must keep LF (executed on Linux runners)
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Windows scripts keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.jar binary
+*.apk binary
+*.aab binary
+*.keystore binary
+*.webp binary

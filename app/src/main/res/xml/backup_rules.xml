@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- 최근 문서 DB만 백업, 캐시는 제외 -->
+    <include domain="database" path="wook_viewer.db" />
+</full-backup-content>
