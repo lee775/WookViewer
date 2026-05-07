@@ -6,6 +6,7 @@ import com.wook.viewer.render.RendererRegistryImpl
 import com.wook.viewer.render.docx.DocxDocumentRenderer
 import com.wook.viewer.render.hwp.HwpDocumentRenderer
 import com.wook.viewer.render.pdf.PdfDocumentRenderer
+import com.wook.viewer.render.pptx.PptxDocumentRenderer
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -17,8 +18,7 @@ import javax.inject.Singleton
  * 렌더러 멀티바인딩.
  * 새 포맷 렌더러는 @IntoSet 으로 추가만 하면 RendererRegistry가 자동으로 인식한다.
  *
- * 향후 추가:
- *   - PptxDocumentRenderer
+ * v0.4 기준 모든 MVP 포맷 렌더러 등록 완료.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -39,4 +39,8 @@ abstract class RendererModule {
     @Binds
     @IntoSet
     abstract fun bindDocxRenderer(impl: DocxDocumentRenderer): DocumentRenderer
+
+    @Binds
+    @IntoSet
+    abstract fun bindPptxRenderer(impl: PptxDocumentRenderer): DocumentRenderer
 }

@@ -2,22 +2,29 @@
 
 PDF · DOCX · PPTX · HWP/HWPX 문서를 모바일에서 보기 위한 Android 뷰어 앱.
 
-## 현재 상태 (v0.3.0 — DOCX 추가)
+## 현재 상태 (v0.4.0 — PPTX 추가, MVP 포맷 셋 완성)
 
 | 포맷 | 상태 |
 |---|---|
 | PDF | ✅ FULL — 원본과 동일 (`PdfRenderer`) |
 | HWP / HWPX | ✅ TEXT_ONLY — 텍스트 미리보기 모드 |
-| DOCX | ✅ TEXT_ONLY — **외부 라이브러리 0개**, 자체 ZIP+XML 파싱 |
-| DOC (구형) | 🚫 명시적 미지원 — UI에서 "구형 바이너리 형식" 메시지 |
-| PPTX | ⏳ 예정 (v0.4) |
+| DOCX | ✅ TEXT_ONLY — 외부 라이브러리 0개 |
+| PPTX | ✅ TEXT_ONLY — **슬라이드 1개 = 페이지 1개**, 외부 라이브러리 0개 |
+| DOC / PPT (구형) | 🚫 명시적 미지원 — UI에서 "구형 바이너리 형식" 메시지 |
+
+### v0.4 변경사항
+- **PPTX 슬라이드별 추출** — `ppt/slides/slideN.xml`을 자연수 순(slide1<slide2<…<slide10<slide11)으로 정렬
+- 슬라이드 1개를 페이지 1개로 매핑 (PPTX의 자연스러운 구조)
+- 거대 슬라이드(>1500자)는 `TextPaginator` fallback으로 추가 분할
+- 슬라이드 마스터/레이아웃/노트는 추출 대상 아님 (필터링)
+- `.ppt` 구형 OLE 바이너리 명시적 거부
+- v0.2 안내 배너의 "페이지 번호는 원본과 다를 수 있음" 항목이 슬라이드 재배치 케이스도 커버
 
 ### v0.3 변경사항
 - **DOCX 텍스트 추출** — Apache POI 미사용. `java.util.zip` + `javax.xml SAX`만으로 구현 → APK 사이즈 +0KB
 - 표 → 셀 tab + 행 newline으로 평탄화
-- `.doc` 파일은 명시적으로 `UnsupportedVariant` 던지기 (혼동 방지)
+- `.doc` 파일은 명시적으로 `UnsupportedVariant` 던지기
 - HWP에 있던 페이지네이션/Bitmap 렌더 코드를 `render/text/`로 추출 — 모든 TEXT_ONLY 포맷이 공유
-- v0.2 안내 배너가 DOCX에도 자동 적용
 
 ### v0.2 변경사항 (Option A)
 - HWP/DOCX 뷰어 상단에 **"텍스트 미리보기 모드"** 안내 배너
