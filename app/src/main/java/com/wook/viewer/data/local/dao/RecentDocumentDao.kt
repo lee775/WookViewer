@@ -17,8 +17,8 @@ interface RecentDocumentDao {
     suspend fun upsert(entity: RecentDocumentEntity)
 
     @Query("UPDATE recent_documents SET lastPageIndex = :pageIndex, lastOpenedAt = :openedAt WHERE uriString = :uriString")
-    suspend fun updateLastPage(uriString: String, pageIndex: Int, openedAt: Long)
+    suspend fun updateLastPage(uriString: String, pageIndex: Int, openedAt: Long): Int
 
     @Query("DELETE FROM recent_documents WHERE uriString = :uriString")
-    suspend fun delete(uriString: String)
+    suspend fun delete(uriString: String): Int
 }
