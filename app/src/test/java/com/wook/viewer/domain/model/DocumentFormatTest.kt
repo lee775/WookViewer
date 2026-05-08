@@ -26,9 +26,22 @@ class DocumentFormatTest {
         assertEquals(DocumentFormat.HWP, DocumentFormat.fromExtension("a.hwpx"))
     }
 
+    @Test fun `markdown extensions`() {
+        assertEquals(DocumentFormat.MARKDOWN, DocumentFormat.fromExtension("README.md"))
+        assertEquals(DocumentFormat.MARKDOWN, DocumentFormat.fromExtension("doc.markdown"))
+    }
+
+    @Test fun `plain text extensions`() {
+        assertEquals(DocumentFormat.PLAIN_TEXT, DocumentFormat.fromExtension("notes.txt"))
+        assertEquals(DocumentFormat.PLAIN_TEXT, DocumentFormat.fromExtension("data.csv"))
+        assertEquals(DocumentFormat.PLAIN_TEXT, DocumentFormat.fromExtension("config.json"))
+        assertEquals(DocumentFormat.PLAIN_TEXT, DocumentFormat.fromExtension("settings.yaml"))
+        assertEquals(DocumentFormat.PLAIN_TEXT, DocumentFormat.fromExtension("server.log"))
+    }
+
     @Test fun `unknown returns null`() {
-        assertNull(DocumentFormat.fromExtension("a.txt"))
         assertNull(DocumentFormat.fromExtension("noext"))
+        assertNull(DocumentFormat.fromExtension("a.unknownext"))
     }
 
     @Test fun `mime type lookup`() {

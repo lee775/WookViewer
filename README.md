@@ -2,15 +2,17 @@
 
 PDF · DOCX · PPTX · HWP/HWPX 문서를 모바일에서 보기 위한 Android 뷰어 앱.
 
-## 현재 상태 (v0.4.0 — PPTX 추가, MVP 포맷 셋 완성)
+## 현재 상태 (v0.4.8 — 텍스트 가족 + 페이지 스와이프 + 텍스트 선택)
 
 | 포맷 | 상태 |
 |---|---|
-| PDF | ✅ FULL — 원본과 동일 (`PdfRenderer`) |
-| HWP / HWPX | ✅ TEXT_ONLY — 텍스트 미리보기 모드 |
-| DOCX | ✅ TEXT_ONLY — 외부 라이브러리 0개 |
-| PPTX | ✅ TEXT_ONLY — **슬라이드 1개 = 페이지 1개**, 외부 라이브러리 0개 |
-| DOC / PPT (구형) | 🚫 명시적 미지원 — UI에서 "구형 바이너리 형식" 메시지 |
+| PDF | ✅ FULL — 원본 그대로 (`PdfRenderer`) + 핀치/더블탭 줌 |
+| HWP / HWPX | ✅ TEXT_ONLY — 텍스트 미리보기 + 길게 눌러 선택/복사 |
+| DOCX | ✅ TEXT_ONLY — 외부 라이브러리 0개 + 선택/복사 |
+| PPTX | ✅ TEXT_ONLY — 슬라이드 1개 = 페이지 1개 + 선택/복사 |
+| **Markdown** | ✅ TEXT_ONLY — `.md`/`.markdown`, 평문 표시 (서식 렌더는 v0.5+) |
+| **일반 텍스트** | ✅ TEXT_ONLY — `.txt`/`.csv`/`.tsv`/`.json`/`.xml`/`.yaml`/`.yml`/`.log`/`.ini`/`.toml`/`.conf`/`.properties`/`.env` |
+| DOC / PPT (구형) | 🚫 명시적 미지원 |
 
 ### v0.4 변경사항
 - **PPTX 슬라이드별 추출** — `ppt/slides/slideN.xml`을 자연수 순(slide1<slide2<…<slide10<slide11)으로 정렬

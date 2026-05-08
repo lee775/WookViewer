@@ -33,7 +33,7 @@ class PdfDocumentRenderer @Inject constructor(
     @ApplicationContext private val context: Context
 ) : DocumentRenderer {
 
-    override val supportedFormat: DocumentFormat = DocumentFormat.PDF
+    override val supportedFormats: Set<DocumentFormat> = setOf(DocumentFormat.PDF)
 
     private class Handle(
         override val uri: Uri,

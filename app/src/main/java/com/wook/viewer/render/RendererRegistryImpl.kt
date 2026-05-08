@@ -11,8 +11,13 @@ class RendererRegistryImpl @Inject constructor(
     renderers: Set<@JvmSuppressWildcards DocumentRenderer>
 ) : RendererRegistry {
 
-    private val byFormat: Map<DocumentFormat, DocumentRenderer> =
-        renderers.associateBy { it.supportedFormat }
+    private val byFormat: Map<DocumentFormat, DocumentRenderer> = buildMap {
+        renderers.forEach { renderer ->
+            renderer.supportedFormats.forEach { format ->
+                put(format, renderer)
+            }
+        }
+    }
 
     override fun rendererFor(format: DocumentFormat): DocumentRenderer? = byFormat[format]
     override fun supportedFormats(): Set<DocumentFormat> = byFormat.keys

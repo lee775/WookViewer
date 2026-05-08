@@ -39,7 +39,7 @@ class DocxDocumentRenderer @Inject constructor(
     @ApplicationContext private val context: Context
 ) : DocumentRenderer {
 
-    override val supportedFormat: DocumentFormat = DocumentFormat.DOCX
+    override val supportedFormats: Set<DocumentFormat> = setOf(DocumentFormat.DOCX)
 
     private class Handle(
         override val uri: Uri,

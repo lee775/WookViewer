@@ -40,6 +40,30 @@ enum class DocumentFormat(
             "application/vnd.hancom.hwpx"
         ),
         fidelity = RenderingFidelity.TEXT_ONLY
+    ),
+    MARKDOWN(
+        displayName = "Markdown",
+        extensions = listOf("md", "markdown"),
+        mimeTypes = listOf("text/markdown", "text/x-markdown"),
+        fidelity = RenderingFidelity.TEXT_ONLY
+    ),
+    PLAIN_TEXT(
+        displayName = "텍스트",
+        extensions = listOf(
+            "txt", "log",
+            "csv", "tsv",
+            "json", "xml", "yaml", "yml",
+            "ini", "toml", "conf",
+            "properties", "env"
+        ),
+        mimeTypes = listOf(
+            "text/plain",
+            "text/csv", "text/tab-separated-values",
+            "application/json", "application/xml", "text/xml",
+            "application/yaml", "text/yaml",
+            "application/toml"
+        ),
+        fidelity = RenderingFidelity.TEXT_ONLY
     );
 
     companion object {

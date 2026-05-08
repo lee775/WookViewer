@@ -41,7 +41,7 @@ class PptxDocumentRenderer @Inject constructor(
     @ApplicationContext private val context: Context
 ) : DocumentRenderer {
 
-    override val supportedFormat: DocumentFormat = DocumentFormat.PPTX
+    override val supportedFormats: Set<DocumentFormat> = setOf(DocumentFormat.PPTX)
 
     private class Handle(
         override val uri: Uri,

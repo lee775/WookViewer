@@ -7,6 +7,7 @@ import com.wook.viewer.render.docx.DocxDocumentRenderer
 import com.wook.viewer.render.hwp.HwpDocumentRenderer
 import com.wook.viewer.render.pdf.PdfDocumentRenderer
 import com.wook.viewer.render.pptx.PptxDocumentRenderer
+import com.wook.viewer.render.text.PlainTextDocumentRenderer
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -43,4 +44,9 @@ abstract class RendererModule {
     @Binds
     @IntoSet
     abstract fun bindPptxRenderer(impl: PptxDocumentRenderer): DocumentRenderer
+
+    /** Markdown + 일반 텍스트 (txt/csv/json/xml/yaml/...) — 단일 렌더러가 다중 포맷 지원. */
+    @Binds
+    @IntoSet
+    abstract fun bindPlainTextRenderer(impl: PlainTextDocumentRenderer): DocumentRenderer
 }

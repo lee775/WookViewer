@@ -14,8 +14,8 @@ import com.wook.viewer.domain.model.SearchHit
  */
 interface DocumentRenderer {
 
-    /** 이 렌더러가 처리할 수 있는 포맷. */
-    val supportedFormat: DocumentFormat
+    /** 이 렌더러가 처리할 수 있는 포맷(들). 한 렌더러가 여러 포맷을 다룰 수 있다. */
+    val supportedFormats: Set<DocumentFormat>
 
     /** 문서를 열고 핸들을 반환한다. 닫지 않으면 자원이 누수된다. */
     suspend fun open(uri: Uri): DocumentHandle

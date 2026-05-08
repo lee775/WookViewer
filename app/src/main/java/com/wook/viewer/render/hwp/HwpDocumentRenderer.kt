@@ -40,7 +40,7 @@ class HwpDocumentRenderer @Inject constructor(
     @ApplicationContext private val context: Context
 ) : DocumentRenderer {
 
-    override val supportedFormat: DocumentFormat = DocumentFormat.HWP
+    override val supportedFormats: Set<DocumentFormat> = setOf(DocumentFormat.HWP)
 
     private class Handle(
         override val uri: Uri,

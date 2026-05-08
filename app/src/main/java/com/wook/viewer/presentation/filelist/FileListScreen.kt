@@ -163,6 +163,7 @@ private fun formatDate(ts: Long): String =
     DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(ts))
 
 private fun allMimeTypes(): Array<String> = arrayOf(
+    // 문서
     "application/pdf",
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -171,5 +172,12 @@ private fun allMimeTypes(): Array<String> = arrayOf(
     "application/x-hwp",
     "application/haansofthwp",
     "application/vnd.hancom.hwpx",
+    // 텍스트 가족 (markdown / plain / csv / json / xml / yaml 등)
+    "text/*",
+    "application/json",
+    "application/xml",
+    "application/yaml",
+    "application/toml",
+    // 폴백
     "application/octet-stream"
 )
