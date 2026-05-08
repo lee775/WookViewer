@@ -2,11 +2,13 @@ package com.wook.viewer.presentation.viewer.components
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,6 +25,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.dp
+import com.wook.viewer.presentation.theme.DarkBg
 
 /**
  * 비트맵 페이지 — 핀치 줌 + 더블탭 토글 + 팬.
@@ -46,6 +50,8 @@ fun BitmapPage(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .background(DarkBg)
+            .padding(24.dp)
             .onSizeChanged { onWidthChanged(it.width) },
         contentAlignment = Alignment.Center
     ) {

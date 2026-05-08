@@ -12,9 +12,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -22,9 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -37,11 +39,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.wook.viewer.R
 import com.wook.viewer.app.BuildInfo
@@ -49,12 +54,25 @@ import com.wook.viewer.domain.error.DocumentError
 import com.wook.viewer.domain.model.Document
 import com.wook.viewer.domain.model.DocumentFormat
 import com.wook.viewer.domain.model.RenderingFidelity
+import com.wook.viewer.presentation.theme.DarkBg
+import com.wook.viewer.presentation.theme.DarkElevated
+import com.wook.viewer.presentation.theme.DarkSurface
+import com.wook.viewer.presentation.theme.LightBg
+import com.wook.viewer.presentation.theme.LightSurface
+import com.wook.viewer.presentation.theme.LightSurfaceAlt
+import com.wook.viewer.presentation.theme.TextOnDark
+import com.wook.viewer.presentation.theme.TextOnDarkMuted
+import com.wook.viewer.presentation.theme.TextPrimary
+import com.wook.viewer.presentation.theme.TextSecondary
 import com.wook.viewer.presentation.viewer.components.BitmapPage
 import com.wook.viewer.presentation.viewer.components.LimitationsDialog
 import com.wook.viewer.presentation.viewer.components.RenderingNoticeBanner
 import com.wook.viewer.presentation.viewer.components.TextPage
 import kotlinx.coroutines.flow.distinctUntilChanged
 
+/**
+ * 욱뷰어 v0.5 뷰어 — 콘텐츠가 비트맵/이미지면 다크 테마, 텍스트면 라이트 테마.
+ */
 @Composable
 fun ViewerScreen(
     uri: Uri?,
@@ -75,62 +93,61 @@ fun ViewerScreen(
     val isTextFormat = state.document?.format?.fidelity == RenderingFidelity.TEXT_ONLY
     val showBanner = isTextFormat && !noticeDismissed && state.error == null
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = state.document?.displayName ?: stringResource(R.string.title_viewer),
-                        maxLines = 1
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back)
-                        )
-                    }
-                }
+    val isDarkScreen = !isTextFormat  // 비트맵(PDF/이미지) → 다크
+    val bgColor = if (isDarkScreen) DarkBg else LightBg
+    val barColor = if (isDarkScreen) DarkSurface else LightSurface
+    val textColor = if (isDarkScreen) TextOnDark else TextPrimary
+    val mutedColor = if (isDarkScreen) TextOnDarkMuted else TextSecondary
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgColor)
+    ) {
+        ViewerTopBar(
+            doc = state.document,
+            pageCount = state.pageCount,
+            barColor = barColor,
+            textColor = textColor,
+            mutedColor = mutedColor,
+            iconBg = if (isDarkScreen) DarkBg else LightSurfaceAlt,
+            onBack = onBack
+        )
+
+        if (showBanner) {
+            RenderingNoticeBanner(
+                onMoreInfo = { showLimitationsDialog = true },
+                onDismiss = { noticeDismissed = true }
             )
-        },
-        bottomBar = {
-            if (state.pageCount > 0 && state.error == null) {
-                PageIndicator(state.currentIndex, state.pageCount)
-            }
         }
-    ) { padding ->
-        Column(
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .background(bgColor)
+                .weight(1f),
+            contentAlignment = Alignment.Center
         ) {
-            if (showBanner) {
-                RenderingNoticeBanner(
-                    onMoreInfo = { showLimitationsDialog = true },
-                    onDismiss = { noticeDismissed = true }
+            when {
+                state.loading -> LoadingView(state.document?.format, isDarkScreen)
+                state.error != null -> ErrorView(state.error!!, state.document, isDarkScreen)
+                state.pageCount > 0 -> PageContent(
+                    pageCount = state.pageCount,
+                    initialIndex = state.currentIndex,
+                    isTextFormat = isTextFormat,
+                    onPageChanged = vm::onPageChanged,
+                    loadBitmap = vm::renderBitmap,
+                    loadText = vm::getPageText
                 )
             }
+        }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFF202225)),
-                contentAlignment = Alignment.Center
-            ) {
-                when {
-                    state.loading -> LoadingView(state.document?.format)
-                    state.error != null -> ErrorView(state.error!!, state.document)
-                    state.pageCount > 0 -> PageContent(
-                        pageCount = state.pageCount,
-                        initialIndex = state.currentIndex,
-                        isTextFormat = isTextFormat,
-                        onPageChanged = vm::onPageChanged,
-                        loadBitmap = vm::renderBitmap,
-                        loadText = vm::getPageText
-                    )
-                }
-            }
+        if (state.pageCount > 0 && state.error == null) {
+            PageIndicator(
+                currentIndex = state.currentIndex,
+                pageCount = state.pageCount,
+                isDarkScreen = isDarkScreen
+            )
         }
     }
 
@@ -139,12 +156,59 @@ fun ViewerScreen(
     }
 }
 
-/**
- * 페이지 컨테이너 — HorizontalPager로 좌우 스와이프, 각 페이지는 lazy 렌더.
- *
- * - TEXT_ONLY: SelectionContainer + Text → 길게 눌러서 선택, 복사
- * - 기타(PDF): 비트맵 + 핀치/더블탭 줌
- */
+@Composable
+private fun ViewerTopBar(
+    doc: Document?,
+    pageCount: Int,
+    barColor: Color,
+    textColor: Color,
+    mutedColor: Color,
+    iconBg: Color,
+    onBack: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(barColor)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(iconBg),
+            contentAlignment = Alignment.Center
+        ) {
+            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(R.string.action_back),
+                    tint = textColor
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
+            Text(
+                text = doc?.displayName ?: stringResource(R.string.title_viewer),
+                color = textColor,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+            if (doc != null && pageCount > 0) {
+                Text(
+                    text = "${doc.format.displayName} · ${pageCount} 페이지",
+                    color = mutedColor,
+                    fontSize = 11.sp,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun PageContent(
     pageCount: Int,
@@ -186,15 +250,10 @@ private fun BitmapPagerItem(
     var bitmap by remember(pageIndex) { mutableStateOf<Bitmap?>(null) }
 
     LaunchedEffect(pageIndex, widthPx) {
-        if (widthPx > 0) {
-            bitmap = loadBitmap(pageIndex, widthPx)
-        }
+        if (widthPx > 0) bitmap = loadBitmap(pageIndex, widthPx)
     }
 
-    BitmapPage(
-        bitmap = bitmap,
-        onWidthChanged = { widthPx = it }
-    )
+    BitmapPage(bitmap = bitmap, onWidthChanged = { widthPx = it })
 }
 
 @Composable
@@ -203,32 +262,34 @@ private fun TextPagerItem(
     loadText: suspend (index: Int) -> String?
 ) {
     var text by remember(pageIndex) { mutableStateOf<String?>(null) }
-
     LaunchedEffect(pageIndex) {
         text = loadText(pageIndex) ?: ""
     }
-
     TextPage(text = text)
 }
 
 @Composable
-private fun LoadingView(format: DocumentFormat?) {
+private fun LoadingView(format: DocumentFormat?, isDarkScreen: Boolean) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        CircularProgressIndicator()
+        CircularProgressIndicator(color = if (isDarkScreen) TextOnDark else MaterialTheme.colorScheme.primary)
         val msg = when (format) {
             DocumentFormat.HWP -> stringResource(R.string.loading_hwp)
-            DocumentFormat.DOCX, DocumentFormat.PPTX -> stringResource(R.string.loading_office)
+            DocumentFormat.DOCX, DocumentFormat.PPTX, DocumentFormat.XLSX -> stringResource(R.string.loading_office)
             else -> stringResource(R.string.loading_generic)
         }
-        Text(msg, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            msg,
+            color = if (isDarkScreen) TextOnDark else TextPrimary,
+            fontSize = 14.sp
+        )
     }
 }
 
 @Composable
-private fun ErrorView(error: DocumentError, doc: Document?) {
+private fun ErrorView(error: DocumentError, doc: Document?, isDarkScreen: Boolean) {
     val baseMsg = when (error) {
         is DocumentError.PasswordProtected -> stringResource(R.string.error_password)
         is DocumentError.Corrupted -> stringResource(R.string.error_corrupted)
@@ -239,7 +300,6 @@ private fun ErrorView(error: DocumentError, doc: Document?) {
         )
         is DocumentError.Unknown -> stringResource(R.string.error_unknown)
     }
-
     val ctx = LocalContext.current
     val showDebug = remember { BuildInfo.isDebuggable(ctx) }
     val debugInfo = if (showDebug) buildDebugInfo(error) else null
@@ -253,16 +313,16 @@ private fun ErrorView(error: DocumentError, doc: Document?) {
     ) {
         Text(
             text = baseMsg,
-            color = Color.White,
-            textAlign = TextAlign.Center
+            color = if (isDarkScreen) TextOnDark else TextPrimary,
+            textAlign = TextAlign.Center,
+            fontSize = 14.sp
         )
         if (debugInfo != null) {
             Spacer(Modifier.height(16.dp))
             Text(
                 text = debugInfo,
                 color = Color(0xFFFFB74D),
-                style = MaterialTheme.typography.labelSmall,
-                textAlign = TextAlign.Start,
+                fontSize = 11.sp,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -273,27 +333,42 @@ private fun buildDebugInfo(error: DocumentError): String {
     val sb = StringBuilder("[debug]\n")
     sb.append("type: ").append(error::class.java.simpleName).append('\n')
     val cause = error.cause
-    if (cause != null) {
-        sb.append("cause: ").append(cause::class.java.simpleName).append('\n')
-    }
+    if (cause != null) sb.append("cause: ").append(cause::class.java.simpleName).append('\n')
     val rawMessage = cause?.message ?: error.message ?: "(null)"
     sb.append("message:\n").append(rawMessage)
     return sb.toString()
 }
 
 @Composable
-private fun PageIndicator(currentIndex: Int, pageCount: Int) {
+private fun PageIndicator(
+    currentIndex: Int,
+    pageCount: Int,
+    isDarkScreen: Boolean
+) {
+    val barBg = if (isDarkScreen) DarkSurface else LightSurface
+    val pillBg = if (isDarkScreen) DarkElevated else LightSurfaceAlt
+    val pillFg = if (isDarkScreen) TextOnDark else TextPrimary
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .background(barBg)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = stringResource(R.string.page_indicator, currentIndex + 1, pageCount),
-            style = MaterialTheme.typography.bodyMedium
-        )
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(pillBg)
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = "${currentIndex + 1} / $pageCount",
+                color = pillFg,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }

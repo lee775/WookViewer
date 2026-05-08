@@ -8,21 +8,23 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wook.viewer.presentation.theme.LightSurface
+import com.wook.viewer.presentation.theme.TextMuted
+import com.wook.viewer.presentation.theme.TextPrimary
 
 /**
- * 텍스트 페이지 — 길게 누르고 드래그해서 선택, 시스템 메뉴로 복사 가능.
- * SelectionContainer가 안드로이드 기본 텍스트 선택 UX를 제공.
+ * 텍스트 페이지 (HWP/DOCX/PPTX/XLSX/MD/TXT 등 TEXT_ONLY).
  *
- * HWP/DOCX/PPTX 등 TEXT_ONLY 포맷용.
+ * Pencil 디자인:
+ *  - 흰 배경 + dark 텍스트 (가독성)
+ *  - SelectionContainer로 길게 눌러 선택, 시스템 메뉴 (복사/공유/모두)
  */
 @Composable
 fun TextPage(
@@ -32,23 +34,23 @@ fun TextPage(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF202225)),
+            .background(LightSurface),
         contentAlignment = Alignment.Center
     ) {
         when (text) {
             null -> CircularProgressIndicator()
             "" -> Text(
                 text = "(빈 페이지)",
-                color = Color.White.copy(alpha = 0.6f),
-                style = MaterialTheme.typography.bodyMedium
+                color = TextMuted,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center
             )
             else -> SelectionContainer(modifier = Modifier.fillMaxSize()) {
                 Text(
                     text = text,
-                    color = Color.White,
-                    fontSize = 16.sp,
+                    color = TextPrimary,
+                    fontSize = 15.sp,
                     lineHeight = 24.sp,
-                    textAlign = TextAlign.Start,
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
