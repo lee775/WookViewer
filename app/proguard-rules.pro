@@ -26,3 +26,9 @@
 -dontwarn javax.xml.**
 -dontwarn org.w3c.**
 -dontwarn org.xml.**
+
+# PdfBox-Android
+-keep class com.tom_roush.pdfbox.** { *; }
+-keep class org.apache.pdfbox.** { *; }
+-dontwarn com.tom_roush.pdfbox.**
+-dontwarn org.apache.pdfbox.**

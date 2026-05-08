@@ -25,6 +25,9 @@ timber = "5.0.1"
 hwplib = "1.1.9"
 hwpxlib = "1.0.8"
 
+# PDF text extraction
+pdfboxAndroid = "2.0.27.0"
+
 junit = "4.13.2"
 androidxJunit = "1.2.1"
 espresso = "3.6.1"
@@ -63,6 +66,8 @@ timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
 
 hwplib = { module = "kr.dogfoot:hwplib", version.ref = "hwplib" }
 hwpxlib = { module = "kr.dogfoot:hwpxlib", version.ref = "hwpxlib" }
+
+pdfbox-android = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfboxAndroid" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 androidx-junit = { module = "androidx.test.ext:junit", version.ref = "androidxJunit" }

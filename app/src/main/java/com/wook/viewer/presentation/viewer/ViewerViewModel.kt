@@ -32,12 +32,18 @@ data class SearchMatch(
     val rangeEnd: Int
 )
 
+/** PDF/이미지 뷰 모드. TEXT 모드는 PDF에만 의미가 있음 (이미지는 텍스트 없음). */
+enum class PdfViewMode { BITMAP, TEXT }
+
 data class ViewerUiState(
     val loading: Boolean = false,
     val document: Document? = null,
     val pageCount: Int = 0,
     val currentIndex: Int = 0,
     val error: DocumentError? = null,
+
+    // PDF 보기 모드
+    val pdfViewMode: PdfViewMode = PdfViewMode.BITMAP,
 
     // 검색
     val searchActive: Boolean = false,
@@ -70,8 +76,24 @@ class ViewerViewModel @Inject constructor(
     /** 페이지별 텍스트 캐시 — 검색에 사용. */
     private val pageTextCache = mutableMapOf<Int, String>()
 
+    /** 검색 가능 여부 — TEXT_ONLY 포맷 OR PDF (PdfBox 텍스트 추출). 이미지는 불가. */
     val isSearchSupported: Boolean
-        get() = _state.value.document?.format?.fidelity == RenderingFidelity.TEXT_ONLY
+        get() {
+            val fmt = _state.value.document?.format ?: return false
+            return fmt.fidelity == RenderingFidelity.TEXT_ONLY ||
+                fmt == com.wook.viewer.domain.model.DocumentFormat.PDF
+        }
+
+    fun togglePdfViewMode() {
+        val s = _state.value
+        if (s.document?.format != com.wook.viewer.domain.model.DocumentFormat.PDF) return
+        _state.update {
+            it.copy(
+                pdfViewMode = if (it.pdfViewMode == PdfViewMode.BITMAP) PdfViewMode.TEXT
+                else PdfViewMode.BITMAP
+            )
+        }
+    }
 
     fun load(uri: Uri) {
         if (_state.value.document?.uri == uri && _state.value.error == null) return

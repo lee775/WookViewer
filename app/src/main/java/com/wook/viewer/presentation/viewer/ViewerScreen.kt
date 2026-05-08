@@ -25,7 +25,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -88,10 +90,14 @@ fun ViewerScreen(
         if (uri != null) vm.load(uri)
     }
 
-    val isTextFormat = state.document?.format?.fidelity == RenderingFidelity.TEXT_ONLY
+    val format = state.document?.format
+    val isTextFormat = format?.fidelity == RenderingFidelity.TEXT_ONLY
+    // PDF 텍스트 모드: 비트맵 대신 텍스트로 표시 → 선택/복사 가능
+    val isPdfTextMode = format == DocumentFormat.PDF && state.pdfViewMode == PdfViewMode.TEXT
+    val isTextDisplay = isTextFormat || isPdfTextMode
     val showBanner = isTextFormat && !noticeDismissed && state.error == null && !state.searchActive
 
-    val isDarkBitmap = !isTextFormat
+    val isDarkBitmap = !isTextDisplay
     val bgColor = if (isDarkBitmap) DarkBg else MaterialTheme.colorScheme.background
     val barColor = if (isDarkBitmap) DarkSurface else MaterialTheme.colorScheme.surface
     val textColor = if (isDarkBitmap) TextOnDark else MaterialTheme.colorScheme.onSurface
@@ -118,9 +124,11 @@ fun ViewerScreen(
             ViewerTopBar(
                 doc = state.document,
                 pageCount = state.pageCount,
-                searchSupported = isTextFormat,
+                searchSupported = vm.isSearchSupported,
                 bookmarked = state.currentPageBookmarked,
                 bookmarkCount = state.bookmarks.size,
+                showPdfModeToggle = format == DocumentFormat.PDF,
+                pdfInTextMode = isPdfTextMode,
                 barColor = barColor,
                 textColor = textColor,
                 mutedColor = mutedColor,
@@ -128,7 +136,8 @@ fun ViewerScreen(
                 onBack = onBack,
                 onSearch = { vm.setSearchActive(true) },
                 onToggleBookmark = vm::toggleCurrentBookmark,
-                onShowBookmarks = { showBookmarksSheet = true }
+                onShowBookmarks = { showBookmarksSheet = true },
+                onTogglePdfMode = vm::togglePdfViewMode
             )
         }
 
@@ -152,7 +161,7 @@ fun ViewerScreen(
                 state.pageCount > 0 -> PageContent(
                     pageCount = state.pageCount,
                     currentIndex = state.currentIndex,
-                    isTextFormat = isTextFormat,
+                    isTextFormat = isTextDisplay,
                     onPageChanged = vm::onPageChanged,
                     loadBitmap = vm::renderBitmap,
                     loadText = vm::getPageText,
@@ -192,6 +201,8 @@ private fun ViewerTopBar(
     searchSupported: Boolean,
     bookmarked: Boolean,
     bookmarkCount: Int,
+    showPdfModeToggle: Boolean,
+    pdfInTextMode: Boolean,
     barColor: Color,
     textColor: Color,
     mutedColor: Color,
@@ -199,7 +210,8 @@ private fun ViewerTopBar(
     onBack: () -> Unit,
     onSearch: () -> Unit,
     onToggleBookmark: () -> Unit,
-    onShowBookmarks: () -> Unit
+    onShowBookmarks: () -> Unit,
+    onTogglePdfMode: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -232,6 +244,16 @@ private fun ViewerTopBar(
                     maxLines = 1
                 )
             }
+        }
+        if (showPdfModeToggle) {
+            TopBarIconButton(iconBg = iconBg, onClick = onTogglePdfMode) {
+                Icon(
+                    imageVector = if (pdfInTextMode) Icons.Filled.Image else Icons.Filled.TextFields,
+                    contentDescription = if (pdfInTextMode) "비트맵 모드" else "텍스트 모드",
+                    tint = textColor
+                )
+            }
+            Spacer(Modifier.width(4.dp))
         }
         if (searchSupported) {
             TopBarIconButton(iconBg = iconBg, onClick = onSearch) {

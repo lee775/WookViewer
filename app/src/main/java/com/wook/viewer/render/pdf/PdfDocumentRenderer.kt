@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import com.wook.viewer.domain.model.DocumentFormat
 import com.wook.viewer.domain.model.PageSize
 import com.wook.viewer.domain.model.RenderedPage
@@ -15,18 +17,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Android 내장 PdfRenderer 기반 PDF 렌더러.
+ * PDF 렌더러.
+ *
+ * 두 가지 라이브러리 병용:
+ *  - 비트맵 렌더: Android 내장 PdfRenderer (가볍고 빠름)
+ *  - 텍스트 추출: PdfBox-Android (검색/복사용 텍스트 데이터)
  *
  * 한계:
- *  - 암호화 PDF 미지원 (필요 시 PdfiumAndroid로 교체)
- *  - 텍스트 추출/검색 미지원 (별도 라이브러리 필요)
- *
- * 동시성:
- *  - PdfRenderer는 한 번에 한 페이지만 열 수 있어 mutex로 직렬화한다.
+ *  - 암호화 PDF는 PdfRenderer 단계에서 실패
+ *  - 스캔 PDF (이미지만 있는 PDF) 는 텍스트 추출 결과가 비어있음
+ *  - PdfBox의 PDDocument를 한 번 열면 모든 페이지 메모리 보유 — 거대 PDF에서 메모리 압박 가능
  */
 @Singleton
 class PdfDocumentRenderer @Inject constructor(
@@ -39,6 +44,7 @@ class PdfDocumentRenderer @Inject constructor(
         override val uri: Uri,
         val pfd: ParcelFileDescriptor,
         val renderer: PdfRenderer,
+        val pdDocument: PDDocument?,
         val mutex: Mutex = Mutex()
     ) : DocumentHandle
 
@@ -46,7 +52,17 @@ class PdfDocumentRenderer @Inject constructor(
         val pfd = context.contentResolver.openFileDescriptor(uri, "r")
             ?: error("Cannot open file descriptor for $uri")
         val renderer = PdfRenderer(pfd)
-        Handle(uri, pfd, renderer)
+
+        // PdfBox는 별도 InputStream으로 로드 (PdfRenderer가 점유한 ParcelFileDescriptor를 공유 못 함)
+        val pdDocument = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                PDDocument.load(input)
+            }
+        }.onFailure {
+            Timber.w(it, "PdfBox 로드 실패 — 텍스트 추출 비활성")
+        }.getOrNull()
+
+        Handle(uri, pfd, renderer, pdDocument)
     }
 
     override suspend fun pageCount(handle: DocumentHandle): Int {
@@ -75,7 +91,6 @@ class PdfDocumentRenderer @Inject constructor(
                 val ratio = page.height.toFloat() / page.width.toFloat()
                 val w = targetWidthPx.coerceAtLeast(1)
                 val rawH = (w * ratio).toInt().coerceAtLeast(1)
-                // 메모리 안전을 위해 한쪽 변을 제한
                 val maxDim = MAX_DIMENSION
                 val (finalW, finalH) = if (rawH > maxDim) {
                     val scale = maxDim.toFloat() / rawH
@@ -95,12 +110,30 @@ class PdfDocumentRenderer @Inject constructor(
         }
     }
 
+    override suspend fun getPageText(handle: DocumentHandle, index: Int): String? =
+        withContext(Dispatchers.IO) {
+            val h = handle as Handle
+            val doc = h.pdDocument ?: return@withContext null
+            try {
+                val stripper = PDFTextStripper().apply {
+                    // PDFTextStripper는 1-based 페이지 번호 사용
+                    startPage = index + 1
+                    endPage = index + 1
+                }
+                stripper.getText(doc).trim().ifBlank { "(이 페이지에 추출 가능한 텍스트가 없습니다 — 스캔 PDF일 수 있음)" }
+            } catch (t: Throwable) {
+                Timber.w(t, "PDF page $index 텍스트 추출 실패")
+                null
+            }
+        }
+
     override suspend fun close(handle: DocumentHandle) {
         val h = handle as Handle
         withContext(Dispatchers.IO) {
             h.mutex.withLock {
                 runCatching { h.renderer.close() }
                 runCatching { h.pfd.close() }
+                runCatching { h.pdDocument?.close() }
             }
         }
     }
