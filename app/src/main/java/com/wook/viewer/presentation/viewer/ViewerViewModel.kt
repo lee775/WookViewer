@@ -28,8 +28,6 @@ data class ViewerUiState(
     val document: Document? = null,
     val pageCount: Int = 0,
     val currentIndex: Int = 0,
-    val pageBitmap: Bitmap? = null,
-    /** UI가 strings.xml로 매핑할 도메인 에러. */
     val error: DocumentError? = null
 )
 
@@ -46,18 +44,13 @@ class ViewerViewModel @Inject constructor(
     private var renderer: DocumentRenderer? = null
     private var handle: DocumentHandle? = null
     private var loadJob: Job? = null
-    private var renderJob: Job? = null
 
-    fun load(uri: Uri, targetWidthPx: Int) {
+    /** 문서 열기 — 메타데이터/페이지 수만 결정. 실제 렌더는 PageView에서 lazy하게. */
+    fun load(uri: Uri) {
         if (_state.value.document?.uri == uri && _state.value.error == null) return
-        // 진행 중이던 로드/렌더가 있으면 취소 — 이게 없으면 두 번째 load의 renderPage가
-        // 첫 번째 renderJob을 cancel시키고 catch가 cancellation을 일반 에러로 보고함
         loadJob?.cancel()
-        renderJob?.cancel()
         closeCurrentHandle()
-        _state.update {
-            it.copy(loading = true, error = null, pageBitmap = null, document = null, pageCount = 0)
-        }
+        _state.update { ViewerUiState(loading = true) }
 
         loadJob = viewModelScope.launch {
             try {
@@ -90,9 +83,7 @@ class ViewerViewModel @Inject constructor(
                         currentIndex = 0
                     )
                 }
-                renderPage(0, targetWidthPx)
             } catch (e: CancellationException) {
-                // 정상적인 취소 (load/render 재진입 등) — 에러로 보고하지 않고 재던짐
                 throw e
             } catch (e: DocumentError) {
                 _state.update { it.copy(loading = false, error = e) }
@@ -102,32 +93,40 @@ class ViewerViewModel @Inject constructor(
         }
     }
 
-    fun goToPage(index: Int, targetWidthPx: Int) {
+    /** Pager가 페이지 변경 시 호출. 최근 문서 DB에 마지막 페이지 갱신. */
+    fun onPageChanged(index: Int) {
         val s = _state.value
         if (index !in 0 until s.pageCount) return
+        if (s.currentIndex == index) return
         _state.update { it.copy(currentIndex = index) }
-        renderPage(index, targetWidthPx)
         s.document?.let { doc ->
             viewModelScope.launch { repo.updateLastPage(doc.uri.toString(), index) }
         }
     }
 
-    private fun renderPage(index: Int, targetWidthPx: Int) {
-        val r = renderer ?: return
-        val h = handle ?: return
-        renderJob?.cancel()
-        renderJob = viewModelScope.launch {
-            try {
-                val rendered = r.renderPage(h, index, targetWidthPx)
-                // 성공 시 이전 에러도 함께 클리어 (이전 렌더 실패 후 재시도 케이스)
-                _state.update { it.copy(pageBitmap = rendered.bitmap, error = null) }
-            } catch (e: CancellationException) {
-                throw e  // 취소는 에러 아님
-            } catch (e: DocumentError) {
-                _state.update { it.copy(error = e) }
-            } catch (t: Throwable) {
-                _state.update { it.copy(error = DocumentError.Unknown(t)) }
-            }
+    /** PageView가 호출 — 비트맵 페이지 렌더 (PDF). 실패 시 null. */
+    suspend fun renderBitmap(index: Int, targetWidthPx: Int): Bitmap? {
+        val r = renderer ?: return null
+        val h = handle ?: return null
+        return try {
+            r.renderPage(h, index, targetWidthPx).bitmap
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    /** PageView가 호출 — 텍스트 페이지 (HWP/DOCX/PPTX). 미지원 포맷이면 null. */
+    suspend fun getPageText(index: Int): String? {
+        val r = renderer ?: return null
+        val h = handle ?: return null
+        return try {
+            r.getPageText(h, index)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            null
         }
     }
 

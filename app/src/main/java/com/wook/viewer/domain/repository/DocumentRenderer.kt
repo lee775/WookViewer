@@ -39,6 +39,15 @@ interface DocumentRenderer {
     /** 텍스트 검색. 미지원 포맷은 빈 리스트 반환. */
     suspend fun search(handle: DocumentHandle, query: String): List<SearchHit> = emptyList()
 
+    /**
+     * 페이지의 평문 텍스트.
+     *
+     * - TEXT_ONLY 포맷(HWP/DOCX/PPTX): 해당 페이지 텍스트 반환 → UI가 SelectionContainer로
+     *   감싸 텍스트 선택/복사 가능하게 표시
+     * - FULL fidelity 포맷(PDF): 기본 구현이 null 반환 → UI는 비트맵 렌더 사용
+     */
+    suspend fun getPageText(handle: DocumentHandle, index: Int): String? = null
+
     /** 핸들 닫기. */
     suspend fun close(handle: DocumentHandle)
 }

@@ -91,6 +91,11 @@ class DocxDocumentRenderer @Inject constructor(
         TextPageRenderer.render(page, targetWidthPx, index)
     }
 
+    override suspend fun getPageText(handle: DocumentHandle, index: Int): String? {
+        val h = handle as Handle
+        return h.pages.getOrNull(index)?.text
+    }
+
     override suspend fun close(handle: DocumentHandle) {
         // 리소스 없음 (스트리밍 추출, 임시 파일 없음)
     }
