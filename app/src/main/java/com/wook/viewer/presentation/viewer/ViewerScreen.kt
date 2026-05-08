@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -323,7 +323,7 @@ private fun PageContent(
         }
     }
 
-    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { pageIndex ->
+    VerticalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { pageIndex ->
         if (isTextFormat) {
             TextPagerItem(
                 pageIndex = pageIndex,
@@ -348,7 +348,11 @@ private fun BitmapPagerItem(
     LaunchedEffect(pageIndex, widthPx) {
         if (widthPx > 0) bitmap = loadBitmap(pageIndex, widthPx)
     }
-    BitmapPage(bitmap = bitmap, onWidthChanged = { widthPx = it })
+    BitmapPage(
+        bitmap = bitmap,
+        onWidthChanged = { widthPx = it },
+        resetKey = pageIndex
+    )
 }
 
 @Composable
