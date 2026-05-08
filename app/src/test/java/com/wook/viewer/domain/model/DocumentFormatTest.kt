@@ -52,7 +52,9 @@ class DocumentFormatTest {
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
         )
-        assertNull(DocumentFormat.fromMimeType("text/plain"))
+        assertEquals(DocumentFormat.PLAIN_TEXT, DocumentFormat.fromMimeType("text/plain"))
+        assertEquals(DocumentFormat.MARKDOWN, DocumentFormat.fromMimeType("text/markdown"))
+        assertNull(DocumentFormat.fromMimeType("application/x-unknown"))
         assertNull(DocumentFormat.fromMimeType(null))
     }
 }
