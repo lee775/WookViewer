@@ -19,9 +19,12 @@ class DocumentRepositoryImpl @Inject constructor(
     private val dao: RecentDocumentDao
 ) : DocumentRepository {
 
+    /**
+     * @return 항상 non-null Document. 실패 시 [com.wook.viewer.data.saf.SafResolveException] 던짐.
+     */
     override suspend fun resolveDocument(uri: Uri): Document? {
-        val doc = saf.resolve(uri) ?: return null
-        // 최근 목록에서 다시 열 때를 위해 권한을 잡아둔다.
+        // 인터페이스 호환성 위해 Document?로 두되, 내부적으로는 항상 throw 또는 non-null 반환
+        val doc = saf.resolve(uri)
         saf.persistPermission(uri)
         return doc
     }

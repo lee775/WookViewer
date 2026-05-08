@@ -49,8 +49,11 @@ class FileListViewModel @Inject constructor(
                     _events.value = FileListEvent.OpenDocument(r.document.uri)
                 is OpenDocumentUseCase.Result.Unsupported ->
                     _events.value = FileListEvent.ShowError("지원하지 않는 형식입니다: ${r.name}")
-                OpenDocumentUseCase.Result.NotFound ->
-                    _events.value = FileListEvent.ShowError("파일을 열 수 없습니다.")
+                is OpenDocumentUseCase.Result.NotFound -> {
+                    val msg = "파일을 열 수 없습니다." +
+                        (r.cause?.message?.let { "\n[debug] $it" } ?: "")
+                    _events.value = FileListEvent.ShowError(msg)
+                }
             }
         }
     }

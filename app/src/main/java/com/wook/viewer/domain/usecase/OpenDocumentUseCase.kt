@@ -13,11 +13,17 @@ class OpenDocumentUseCase @Inject constructor(
     sealed interface Result {
         data class Ok(val document: Document) : Result
         data class Unsupported(val name: String) : Result
-        data object NotFound : Result
+        /** SAF/메타데이터 조회 실패. 디버그 빌드는 cause 메시지를 노출. */
+        data class NotFound(val cause: Throwable? = null) : Result
     }
 
     suspend operator fun invoke(uri: Uri): Result {
-        val doc = repo.resolveDocument(uri) ?: return Result.NotFound
+        val doc = try {
+            repo.resolveDocument(uri)
+        } catch (t: Throwable) {
+            return Result.NotFound(t)
+        } ?: return Result.NotFound()
+
         if (registry.rendererFor(doc.format) == null) {
             return Result.Unsupported(doc.displayName)
         }

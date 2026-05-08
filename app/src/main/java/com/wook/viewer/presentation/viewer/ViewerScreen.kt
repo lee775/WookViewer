@@ -42,11 +42,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.wook.viewer.R
+import com.wook.viewer.app.BuildInfo
 import com.wook.viewer.domain.error.DocumentError
 import com.wook.viewer.domain.model.Document
 import com.wook.viewer.domain.model.DocumentFormat
@@ -160,7 +162,7 @@ private fun LoadingView(format: DocumentFormat?) {
 
 @Composable
 private fun ErrorView(error: DocumentError, doc: Document?) {
-    val msg = when (error) {
+    val baseMsg = when (error) {
         is DocumentError.PasswordProtected -> stringResource(R.string.error_password)
         is DocumentError.Corrupted -> stringResource(R.string.error_corrupted)
         is DocumentError.IoError -> stringResource(R.string.error_io)
@@ -170,12 +172,45 @@ private fun ErrorView(error: DocumentError, doc: Document?) {
         )
         is DocumentError.Unknown -> stringResource(R.string.error_unknown)
     }
-    Text(
-        text = msg,
-        color = Color.White,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.padding(24.dp)
-    )
+
+    val ctx = LocalContext.current
+    val showDebug = remember { BuildInfo.isDebuggable(ctx) }
+    val debugInfo = if (showDebug) buildDebugInfo(error) else null
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = baseMsg,
+            color = Color.White,
+            textAlign = TextAlign.Center
+        )
+        if (debugInfo != null) {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = debugInfo,
+                color = Color(0xFFFFB74D),  // orange — 디버그 표시
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Start
+            )
+        }
+    }
+}
+
+private fun buildDebugInfo(error: DocumentError): String {
+    val sb = StringBuilder("[debug]\n")
+    sb.append("type: ").append(error::class.java.simpleName).append('\n')
+    val cause = error.cause
+    if (cause != null) {
+        sb.append("cause: ").append(cause::class.java.simpleName).append('\n')
+        sb.append("message: ").append(cause.message ?: "(null)")
+    } else {
+        sb.append("message: ").append(error.message ?: "(null)")
+    }
+    return sb.toString()
 }
 
 @Composable
