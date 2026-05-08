@@ -50,11 +50,7 @@ import com.wook.viewer.app.BuildInfo
 import com.wook.viewer.presentation.filelist.components.FileCard
 import com.wook.viewer.presentation.theme.BrandAccent
 import com.wook.viewer.presentation.theme.BrandAccentLight
-import com.wook.viewer.presentation.theme.LightBg
-import com.wook.viewer.presentation.theme.LightDivider
 import com.wook.viewer.presentation.theme.TextOnDark
-import com.wook.viewer.presentation.theme.TextPrimary
-import com.wook.viewer.presentation.theme.TextSecondary
 
 @Composable
 fun FileListScreen(
@@ -86,7 +82,7 @@ fun FileListScreen(
     }
 
     Scaffold(
-        containerColor = LightBg,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = { WookTopBar() },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
@@ -104,20 +100,20 @@ fun FileListScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(LightBg)
+                .background(MaterialTheme.colorScheme.background)
         ) {
             Box(
                 Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(LightDivider)
+                    .background(MaterialTheme.colorScheme.outlineVariant)
             )
             if (state.recent.isEmpty()) {
                 EmptyState()
             } else {
                 Text(
                     text = stringResource(R.string.title_recent),
-                    color = TextSecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 12.dp)
@@ -144,7 +140,7 @@ private fun WookTopBar() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(LightBg)
+            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -165,13 +161,13 @@ private fun WookTopBar() {
         Column {
             Text(
                 text = "욱뷰어",
-                color = TextPrimary,
+                color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
                 text = buildLabel,
-                color = TextSecondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp
             )
         }
@@ -201,7 +197,7 @@ private fun EmptyState() {
             Spacer(Modifier.height(16.dp))
             Text(
                 text = stringResource(R.string.empty_recent),
-                color = TextSecondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 14.sp,
                 textAlign = TextAlign.Center
             )

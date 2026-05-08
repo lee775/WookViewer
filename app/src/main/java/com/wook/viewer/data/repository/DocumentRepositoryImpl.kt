@@ -1,9 +1,12 @@
 package com.wook.viewer.data.repository
 
 import android.net.Uri
+import com.wook.viewer.data.local.dao.BookmarkDao
 import com.wook.viewer.data.local.dao.RecentDocumentDao
+import com.wook.viewer.data.local.entity.BookmarkEntity
 import com.wook.viewer.data.local.entity.RecentDocumentEntity
 import com.wook.viewer.data.saf.SafFileSource
+import com.wook.viewer.domain.model.Bookmark
 import com.wook.viewer.domain.model.Document
 import com.wook.viewer.domain.model.DocumentFormat
 import com.wook.viewer.domain.model.RecentDocument
@@ -16,14 +19,11 @@ import javax.inject.Singleton
 @Singleton
 class DocumentRepositoryImpl @Inject constructor(
     private val saf: SafFileSource,
-    private val dao: RecentDocumentDao
+    private val dao: RecentDocumentDao,
+    private val bookmarkDao: BookmarkDao
 ) : DocumentRepository {
 
-    /**
-     * @return 항상 non-null Document. 실패 시 [com.wook.viewer.data.saf.SafResolveException] 던짐.
-     */
     override suspend fun resolveDocument(uri: Uri): Document? {
-        // 인터페이스 호환성 위해 Document?로 두되, 내부적으로는 항상 throw 또는 non-null 반환
         val doc = saf.resolve(uri)
         saf.persistPermission(uri)
         return doc
@@ -50,6 +50,43 @@ class DocumentRepositoryImpl @Inject constructor(
 
     override suspend fun removeRecent(uriString: String) {
         dao.delete(uriString)
+        bookmarkDao.removeAll(uriString)
+    }
+
+    // ---- Bookmarks ----
+
+    override fun observeBookmarks(uriString: String): Flow<List<Bookmark>> =
+        bookmarkDao.observeForDocument(uriString).map { rows ->
+            rows.map { Bookmark(it.uriString, it.pageIndex, it.createdAt, it.label) }
+        }
+
+    override suspend fun isBookmarked(uriString: String, pageIndex: Int): Boolean =
+        bookmarkDao.exists(uriString, pageIndex)
+
+    override suspend fun addBookmark(uriString: String, pageIndex: Int) {
+        bookmarkDao.add(
+            BookmarkEntity(
+                uriString = uriString,
+                pageIndex = pageIndex,
+                createdAt = System.currentTimeMillis(),
+                label = null
+            )
+        )
+    }
+
+    override suspend fun removeBookmark(uriString: String, pageIndex: Int) {
+        bookmarkDao.remove(uriString, pageIndex)
+    }
+
+    override suspend fun toggleBookmark(uriString: String, pageIndex: Int): Boolean {
+        val existed = bookmarkDao.exists(uriString, pageIndex)
+        return if (existed) {
+            bookmarkDao.remove(uriString, pageIndex)
+            false
+        } else {
+            addBookmark(uriString, pageIndex)
+            true
+        }
     }
 
     private fun toDomain(e: RecentDocumentEntity) = RecentDocument(

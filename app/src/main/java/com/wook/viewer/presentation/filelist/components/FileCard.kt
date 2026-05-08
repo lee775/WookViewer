@@ -21,11 +21,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.MaterialTheme
 import com.wook.viewer.domain.model.RecentDocument
-import com.wook.viewer.presentation.theme.LightBorder
-import com.wook.viewer.presentation.theme.LightSurface
-import com.wook.viewer.presentation.theme.TextMuted
-import com.wook.viewer.presentation.theme.TextPrimary
 import com.wook.viewer.presentation.theme.style
 import java.text.DateFormat
 import java.util.Date
@@ -51,8 +48,8 @@ fun FileCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(LightSurface)
-            .border(1.dp, LightBorder, RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -78,14 +75,14 @@ fun FileCard(
         ) {
             Text(
                 text = item.displayName,
-                color = TextPrimary,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1
             )
             Text(
                 text = "${item.format.displayName} · ${formatRelative(item.lastOpenedAt)}",
-                color = TextMuted,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 maxLines = 1
             )

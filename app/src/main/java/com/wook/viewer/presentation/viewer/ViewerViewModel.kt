@@ -6,7 +6,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wook.viewer.di.ApplicationScope
 import com.wook.viewer.domain.error.DocumentError
+import com.wook.viewer.domain.model.Bookmark
 import com.wook.viewer.domain.model.Document
+import com.wook.viewer.domain.model.RenderingFidelity
 import com.wook.viewer.domain.repository.DocumentHandle
 import com.wook.viewer.domain.repository.DocumentRenderer
 import com.wook.viewer.domain.repository.DocumentRepository
@@ -23,12 +25,30 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** 페이지 내에서의 검색 매치 — 페이지 인덱스 + 텍스트 내 [start, end) 범위. */
+data class SearchMatch(
+    val pageIndex: Int,
+    val rangeStart: Int,
+    val rangeEnd: Int
+)
+
 data class ViewerUiState(
     val loading: Boolean = false,
     val document: Document? = null,
     val pageCount: Int = 0,
     val currentIndex: Int = 0,
-    val error: DocumentError? = null
+    val error: DocumentError? = null,
+
+    // 검색
+    val searchActive: Boolean = false,
+    val searchQuery: String = "",
+    val searchMatches: List<SearchMatch> = emptyList(),
+    val currentMatchIndex: Int = -1,
+    val searching: Boolean = false,
+
+    // 북마크
+    val bookmarks: List<Bookmark> = emptyList(),
+    val currentPageBookmarked: Boolean = false
 )
 
 @HiltViewModel
@@ -44,12 +64,22 @@ class ViewerViewModel @Inject constructor(
     private var renderer: DocumentRenderer? = null
     private var handle: DocumentHandle? = null
     private var loadJob: Job? = null
+    private var searchJob: Job? = null
+    private var bookmarkJob: Job? = null
 
-    /** 문서 열기 — 메타데이터/페이지 수만 결정. 실제 렌더는 PageView에서 lazy하게. */
+    /** 페이지별 텍스트 캐시 — 검색에 사용. */
+    private val pageTextCache = mutableMapOf<Int, String>()
+
+    val isSearchSupported: Boolean
+        get() = _state.value.document?.format?.fidelity == RenderingFidelity.TEXT_ONLY
+
     fun load(uri: Uri) {
         if (_state.value.document?.uri == uri && _state.value.error == null) return
         loadJob?.cancel()
+        searchJob?.cancel()
+        bookmarkJob?.cancel()
         closeCurrentHandle()
+        pageTextCache.clear()
         _state.update { ViewerUiState(loading = true) }
 
         loadJob = viewModelScope.launch {
@@ -83,6 +113,8 @@ class ViewerViewModel @Inject constructor(
                         currentIndex = 0
                     )
                 }
+                observeBookmarks(doc.uri.toString())
+                refreshCurrentPageBookmark()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: DocumentError) {
@@ -93,7 +125,6 @@ class ViewerViewModel @Inject constructor(
         }
     }
 
-    /** Pager가 페이지 변경 시 호출. 최근 문서 DB에 마지막 페이지 갱신. */
     fun onPageChanged(index: Int) {
         val s = _state.value
         if (index !in 0 until s.pageCount) return
@@ -102,9 +133,16 @@ class ViewerViewModel @Inject constructor(
         s.document?.let { doc ->
             viewModelScope.launch { repo.updateLastPage(doc.uri.toString(), index) }
         }
+        refreshCurrentPageBookmark()
+        // 검색 중이면 현재 페이지에 들어온 매치로 currentMatchIndex 동기화
+        if (s.searchActive && s.searchMatches.isNotEmpty()) {
+            val newMatch = s.searchMatches.indexOfFirst { it.pageIndex == index }
+            if (newMatch >= 0) {
+                _state.update { it.copy(currentMatchIndex = newMatch) }
+            }
+        }
     }
 
-    /** PageView가 호출 — 비트맵 페이지 렌더 (PDF). 실패 시 null. */
     suspend fun renderBitmap(index: Int, targetWidthPx: Int): Bitmap? {
         val r = renderer ?: return null
         val h = handle ?: return null
@@ -117,17 +155,159 @@ class ViewerViewModel @Inject constructor(
         }
     }
 
-    /** PageView가 호출 — 텍스트 페이지 (HWP/DOCX/PPTX). 미지원 포맷이면 null. */
     suspend fun getPageText(index: Int): String? {
+        pageTextCache[index]?.let { return it }
         val r = renderer ?: return null
         val h = handle ?: return null
         return try {
-            r.getPageText(h, index)
+            val text = r.getPageText(h, index)
+            if (text != null) pageTextCache[index] = text
+            text
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
             null
         }
+    }
+
+    // ---- 검색 ----
+
+    fun setSearchActive(active: Boolean) {
+        if (!active) {
+            searchJob?.cancel()
+            _state.update {
+                it.copy(
+                    searchActive = false,
+                    searchQuery = "",
+                    searchMatches = emptyList(),
+                    currentMatchIndex = -1,
+                    searching = false
+                )
+            }
+        } else {
+            _state.update { it.copy(searchActive = true) }
+        }
+    }
+
+    fun onSearchQueryChange(query: String) {
+        _state.update { it.copy(searchQuery = query) }
+        searchJob?.cancel()
+        if (query.isBlank()) {
+            _state.update { it.copy(searchMatches = emptyList(), currentMatchIndex = -1, searching = false) }
+            return
+        }
+        searchJob = viewModelScope.launch {
+            _state.update { it.copy(searching = true) }
+            val pageCount = _state.value.pageCount
+            val matches = mutableListOf<SearchMatch>()
+            for (i in 0 until pageCount) {
+                val text = getPageText(i) ?: continue
+                var idx = 0
+                while (true) {
+                    val found = text.indexOf(query, idx, ignoreCase = true)
+                    if (found < 0) break
+                    matches += SearchMatch(i, found, found + query.length)
+                    idx = found + query.length
+                }
+                if (matches.size > MAX_MATCHES) break
+            }
+            // 결과: 첫 매치가 현재 페이지 이후 가장 가까운 매치
+            val current = _state.value.currentIndex
+            val firstFromHere = matches.indexOfFirst { it.pageIndex >= current }
+            val pickIndex = if (firstFromHere >= 0) firstFromHere else if (matches.isNotEmpty()) 0 else -1
+            _state.update {
+                it.copy(
+                    searchMatches = matches,
+                    currentMatchIndex = pickIndex,
+                    searching = false
+                )
+            }
+            if (pickIndex >= 0 && matches.isNotEmpty()) {
+                val targetPage = matches[pickIndex].pageIndex
+                if (targetPage != _state.value.currentIndex) {
+                    _state.update { it.copy(currentIndex = targetPage) }
+                }
+            }
+        }
+    }
+
+    fun goToNextMatch() {
+        val s = _state.value
+        if (s.searchMatches.isEmpty()) return
+        val next = (s.currentMatchIndex + 1).mod(s.searchMatches.size)
+        val targetPage = s.searchMatches[next].pageIndex
+        _state.update { it.copy(currentMatchIndex = next, currentIndex = targetPage) }
+    }
+
+    fun goToPrevMatch() {
+        val s = _state.value
+        if (s.searchMatches.isEmpty()) return
+        val prev = if (s.currentMatchIndex <= 0) s.searchMatches.size - 1 else s.currentMatchIndex - 1
+        val targetPage = s.searchMatches[prev].pageIndex
+        _state.update { it.copy(currentMatchIndex = prev, currentIndex = targetPage) }
+    }
+
+    /** 현재 페이지(index)에 해당하는 매치 범위 반환 — TextPage 하이라이트용. */
+    fun matchesForPage(pageIndex: Int): List<IntRange> =
+        _state.value.searchMatches
+            .filter { it.pageIndex == pageIndex }
+            .map { it.rangeStart until it.rangeEnd }
+
+    /** 현재 활성 매치의 범위 (currentMatchIndex가 가리키는 매치) — 다른 색으로 강조용. */
+    fun activeMatchRange(pageIndex: Int): IntRange? {
+        val s = _state.value
+        if (s.currentMatchIndex < 0 || s.currentMatchIndex >= s.searchMatches.size) return null
+        val m = s.searchMatches[s.currentMatchIndex]
+        return if (m.pageIndex == pageIndex) m.rangeStart until m.rangeEnd else null
+    }
+
+    // ---- 북마크 ----
+
+    private fun observeBookmarks(uriString: String) {
+        bookmarkJob?.cancel()
+        bookmarkJob = viewModelScope.launch {
+            repo.observeBookmarks(uriString).collect { list ->
+                _state.update { it.copy(bookmarks = list) }
+            }
+        }
+    }
+
+    private fun refreshCurrentPageBookmark() {
+        val s = _state.value
+        val uri = s.document?.uri?.toString() ?: return
+        viewModelScope.launch {
+            val isBm = repo.isBookmarked(uri, s.currentIndex)
+            _state.update { it.copy(currentPageBookmarked = isBm) }
+        }
+    }
+
+    fun toggleCurrentBookmark() {
+        val s = _state.value
+        val uri = s.document?.uri?.toString() ?: return
+        viewModelScope.launch {
+            val nowBookmarked = repo.toggleBookmark(uri, s.currentIndex)
+            _state.update { it.copy(currentPageBookmarked = nowBookmarked) }
+        }
+    }
+
+    fun removeBookmarkAt(pageIndex: Int) {
+        val uri = _state.value.document?.uri?.toString() ?: return
+        viewModelScope.launch {
+            repo.removeBookmark(uri, pageIndex)
+            if (pageIndex == _state.value.currentIndex) {
+                _state.update { it.copy(currentPageBookmarked = false) }
+            }
+        }
+    }
+
+    fun jumpToPage(pageIndex: Int) {
+        val s = _state.value
+        if (pageIndex !in 0 until s.pageCount) return
+        _state.update { it.copy(currentIndex = pageIndex) }
+        s.document?.let { doc ->
+            viewModelScope.launch { repo.updateLastPage(doc.uri.toString(), pageIndex) }
+        }
+        refreshCurrentPageBookmark()
     }
 
     private fun closeCurrentHandle() {
@@ -145,5 +325,9 @@ class ViewerViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         closeCurrentHandle()
+    }
+
+    private companion object {
+        const val MAX_MATCHES = 500
     }
 }

@@ -22,6 +22,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,24 +59,17 @@ import com.wook.viewer.domain.model.Document
 import com.wook.viewer.domain.model.DocumentFormat
 import com.wook.viewer.domain.model.RenderingFidelity
 import com.wook.viewer.presentation.theme.DarkBg
-import com.wook.viewer.presentation.theme.DarkElevated
 import com.wook.viewer.presentation.theme.DarkSurface
-import com.wook.viewer.presentation.theme.LightBg
-import com.wook.viewer.presentation.theme.LightSurface
-import com.wook.viewer.presentation.theme.LightSurfaceAlt
 import com.wook.viewer.presentation.theme.TextOnDark
 import com.wook.viewer.presentation.theme.TextOnDarkMuted
-import com.wook.viewer.presentation.theme.TextPrimary
-import com.wook.viewer.presentation.theme.TextSecondary
 import com.wook.viewer.presentation.viewer.components.BitmapPage
+import com.wook.viewer.presentation.viewer.components.BookmarksSheet
 import com.wook.viewer.presentation.viewer.components.LimitationsDialog
 import com.wook.viewer.presentation.viewer.components.RenderingNoticeBanner
+import com.wook.viewer.presentation.viewer.components.SearchBar
 import com.wook.viewer.presentation.viewer.components.TextPage
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-/**
- * 욱뷰어 v0.5 뷰어 — 콘텐츠가 비트맵/이미지면 다크 테마, 텍스트면 라이트 테마.
- */
 @Composable
 fun ViewerScreen(
     uri: Uri?,
@@ -85,34 +82,55 @@ fun ViewerScreen(
         mutableStateOf(false)
     }
     var showLimitationsDialog by rememberSaveable { mutableStateOf(false) }
+    var showBookmarksSheet by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(uri) {
         if (uri != null) vm.load(uri)
     }
 
     val isTextFormat = state.document?.format?.fidelity == RenderingFidelity.TEXT_ONLY
-    val showBanner = isTextFormat && !noticeDismissed && state.error == null
+    val showBanner = isTextFormat && !noticeDismissed && state.error == null && !state.searchActive
 
-    val isDarkScreen = !isTextFormat  // 비트맵(PDF/이미지) → 다크
-    val bgColor = if (isDarkScreen) DarkBg else LightBg
-    val barColor = if (isDarkScreen) DarkSurface else LightSurface
-    val textColor = if (isDarkScreen) TextOnDark else TextPrimary
-    val mutedColor = if (isDarkScreen) TextOnDarkMuted else TextSecondary
+    val isDarkBitmap = !isTextFormat
+    val bgColor = if (isDarkBitmap) DarkBg else MaterialTheme.colorScheme.background
+    val barColor = if (isDarkBitmap) DarkSurface else MaterialTheme.colorScheme.surface
+    val textColor = if (isDarkBitmap) TextOnDark else MaterialTheme.colorScheme.onSurface
+    val mutedColor = if (isDarkBitmap) TextOnDarkMuted else MaterialTheme.colorScheme.onSurfaceVariant
+    val iconBg = if (isDarkBitmap) DarkBg else MaterialTheme.colorScheme.surfaceVariant
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
     ) {
-        ViewerTopBar(
-            doc = state.document,
-            pageCount = state.pageCount,
-            barColor = barColor,
-            textColor = textColor,
-            mutedColor = mutedColor,
-            iconBg = if (isDarkScreen) DarkBg else LightSurfaceAlt,
-            onBack = onBack
-        )
+        if (state.searchActive) {
+            SearchBar(
+                query = state.searchQuery,
+                matchCount = state.searchMatches.size,
+                currentMatchIndex = state.currentMatchIndex,
+                searching = state.searching,
+                onQueryChange = vm::onSearchQueryChange,
+                onPrev = vm::goToPrevMatch,
+                onNext = vm::goToNextMatch,
+                onClose = { vm.setSearchActive(false) }
+            )
+        } else {
+            ViewerTopBar(
+                doc = state.document,
+                pageCount = state.pageCount,
+                searchSupported = isTextFormat,
+                bookmarked = state.currentPageBookmarked,
+                bookmarkCount = state.bookmarks.size,
+                barColor = barColor,
+                textColor = textColor,
+                mutedColor = mutedColor,
+                iconBg = iconBg,
+                onBack = onBack,
+                onSearch = { vm.setSearchActive(true) },
+                onToggleBookmark = vm::toggleCurrentBookmark,
+                onShowBookmarks = { showBookmarksSheet = true }
+            )
+        }
 
         if (showBanner) {
             RenderingNoticeBanner(
@@ -129,15 +147,17 @@ fun ViewerScreen(
             contentAlignment = Alignment.Center
         ) {
             when {
-                state.loading -> LoadingView(state.document?.format, isDarkScreen)
-                state.error != null -> ErrorView(state.error!!, state.document, isDarkScreen)
+                state.loading -> LoadingView(state.document?.format, isDarkBitmap)
+                state.error != null -> ErrorView(state.error!!, state.document, isDarkBitmap)
                 state.pageCount > 0 -> PageContent(
                     pageCount = state.pageCount,
-                    initialIndex = state.currentIndex,
+                    currentIndex = state.currentIndex,
                     isTextFormat = isTextFormat,
                     onPageChanged = vm::onPageChanged,
                     loadBitmap = vm::renderBitmap,
-                    loadText = vm::getPageText
+                    loadText = vm::getPageText,
+                    matchesForPage = vm::matchesForPage,
+                    activeMatchRange = vm::activeMatchRange
                 )
             }
         }
@@ -146,7 +166,7 @@ fun ViewerScreen(
             PageIndicator(
                 currentIndex = state.currentIndex,
                 pageCount = state.pageCount,
-                isDarkScreen = isDarkScreen
+                isDarkScreen = isDarkBitmap
             )
         }
     }
@@ -154,39 +174,46 @@ fun ViewerScreen(
     if (showLimitationsDialog) {
         LimitationsDialog(onDismiss = { showLimitationsDialog = false })
     }
+    if (showBookmarksSheet) {
+        BookmarksSheet(
+            bookmarks = state.bookmarks,
+            pageCount = state.pageCount,
+            onJumpTo = vm::jumpToPage,
+            onRemove = vm::removeBookmarkAt,
+            onDismiss = { showBookmarksSheet = false }
+        )
+    }
 }
 
 @Composable
 private fun ViewerTopBar(
     doc: Document?,
     pageCount: Int,
+    searchSupported: Boolean,
+    bookmarked: Boolean,
+    bookmarkCount: Int,
     barColor: Color,
     textColor: Color,
     mutedColor: Color,
     iconBg: Color,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSearch: () -> Unit,
+    onToggleBookmark: () -> Unit,
+    onShowBookmarks: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(barColor)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(iconBg),
-            contentAlignment = Alignment.Center
-        ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.action_back),
-                    tint = textColor
-                )
-            }
+        TopBarIconButton(iconBg = iconBg, onClick = onBack) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = stringResource(R.string.action_back),
+                tint = textColor
+            )
         }
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
@@ -206,20 +233,58 @@ private fun ViewerTopBar(
                 )
             }
         }
+        if (searchSupported) {
+            TopBarIconButton(iconBg = iconBg, onClick = onSearch) {
+                Icon(Icons.Filled.Search, contentDescription = "검색", tint = textColor)
+            }
+            Spacer(Modifier.width(4.dp))
+        }
+        TopBarIconButton(iconBg = iconBg, onClick = onToggleBookmark) {
+            Icon(
+                imageVector = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                contentDescription = if (bookmarked) "북마크 해제" else "북마크",
+                tint = if (bookmarked) MaterialTheme.colorScheme.primary else textColor
+            )
+        }
+        if (bookmarkCount > 0) {
+            Spacer(Modifier.width(4.dp))
+            TopBarIconButton(iconBg = iconBg, onClick = onShowBookmarks) {
+                Icon(Icons.Filled.Bookmarks, contentDescription = "북마크 목록", tint = textColor)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopBarIconButton(
+    iconBg: Color,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(iconBg),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) { content() }
     }
 }
 
 @Composable
 private fun PageContent(
     pageCount: Int,
-    initialIndex: Int,
+    currentIndex: Int,
     isTextFormat: Boolean,
     onPageChanged: (Int) -> Unit,
     loadBitmap: suspend (index: Int, widthPx: Int) -> Bitmap?,
-    loadText: suspend (index: Int) -> String?
+    loadText: suspend (index: Int) -> String?,
+    matchesForPage: (Int) -> List<IntRange>,
+    activeMatchRange: (Int) -> IntRange?
 ) {
     val pagerState = rememberPagerState(
-        initialPage = initialIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0)),
+        initialPage = currentIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0)),
         pageCount = { pageCount }
     )
 
@@ -229,12 +294,21 @@ private fun PageContent(
             .collect { onPageChanged(it) }
     }
 
-    HorizontalPager(
-        state = pagerState,
-        modifier = Modifier.fillMaxSize()
-    ) { pageIndex ->
+    // VM이 currentIndex를 강제로 바꾼 경우 (검색/북마크 jump) pager에 동기화
+    LaunchedEffect(currentIndex) {
+        if (pagerState.currentPage != currentIndex) {
+            pagerState.scrollToPage(currentIndex)
+        }
+    }
+
+    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { pageIndex ->
         if (isTextFormat) {
-            TextPagerItem(pageIndex = pageIndex, loadText = loadText)
+            TextPagerItem(
+                pageIndex = pageIndex,
+                loadText = loadText,
+                matches = matchesForPage(pageIndex),
+                activeMatch = activeMatchRange(pageIndex)
+            )
         } else {
             BitmapPagerItem(pageIndex = pageIndex, loadBitmap = loadBitmap)
         }
@@ -252,20 +326,19 @@ private fun BitmapPagerItem(
     LaunchedEffect(pageIndex, widthPx) {
         if (widthPx > 0) bitmap = loadBitmap(pageIndex, widthPx)
     }
-
     BitmapPage(bitmap = bitmap, onWidthChanged = { widthPx = it })
 }
 
 @Composable
 private fun TextPagerItem(
     pageIndex: Int,
-    loadText: suspend (index: Int) -> String?
+    loadText: suspend (index: Int) -> String?,
+    matches: List<IntRange>,
+    activeMatch: IntRange?
 ) {
     var text by remember(pageIndex) { mutableStateOf<String?>(null) }
-    LaunchedEffect(pageIndex) {
-        text = loadText(pageIndex) ?: ""
-    }
-    TextPage(text = text)
+    LaunchedEffect(pageIndex) { text = loadText(pageIndex) ?: "" }
+    TextPage(text = text, matches = matches, activeMatch = activeMatch)
 }
 
 @Composable
@@ -277,12 +350,13 @@ private fun LoadingView(format: DocumentFormat?, isDarkScreen: Boolean) {
         CircularProgressIndicator(color = if (isDarkScreen) TextOnDark else MaterialTheme.colorScheme.primary)
         val msg = when (format) {
             DocumentFormat.HWP -> stringResource(R.string.loading_hwp)
-            DocumentFormat.DOCX, DocumentFormat.PPTX, DocumentFormat.XLSX -> stringResource(R.string.loading_office)
+            DocumentFormat.DOCX, DocumentFormat.PPTX, DocumentFormat.XLSX ->
+                stringResource(R.string.loading_office)
             else -> stringResource(R.string.loading_generic)
         }
         Text(
             msg,
-            color = if (isDarkScreen) TextOnDark else TextPrimary,
+            color = if (isDarkScreen) TextOnDark else MaterialTheme.colorScheme.onSurface,
             fontSize = 14.sp
         )
     }
@@ -313,7 +387,7 @@ private fun ErrorView(error: DocumentError, doc: Document?, isDarkScreen: Boolea
     ) {
         Text(
             text = baseMsg,
-            color = if (isDarkScreen) TextOnDark else TextPrimary,
+            color = if (isDarkScreen) TextOnDark else MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             fontSize = 14.sp
         )
@@ -345,9 +419,9 @@ private fun PageIndicator(
     pageCount: Int,
     isDarkScreen: Boolean
 ) {
-    val barBg = if (isDarkScreen) DarkSurface else LightSurface
-    val pillBg = if (isDarkScreen) DarkElevated else LightSurfaceAlt
-    val pillFg = if (isDarkScreen) TextOnDark else TextPrimary
+    val barBg = if (isDarkScreen) DarkSurface else MaterialTheme.colorScheme.surface
+    val pillBg = if (isDarkScreen) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surfaceVariant
+    val pillFg = if (isDarkScreen) TextOnDark else MaterialTheme.colorScheme.onSurface
 
     Row(
         modifier = Modifier

@@ -1,6 +1,7 @@
 package com.wook.viewer.domain.repository
 
 import android.net.Uri
+import com.wook.viewer.domain.model.Bookmark
 import com.wook.viewer.domain.model.Document
 import com.wook.viewer.domain.model.RecentDocument
 import kotlinx.coroutines.flow.Flow
@@ -17,4 +18,12 @@ interface DocumentRepository {
     suspend fun updateLastPage(uriString: String, pageIndex: Int)
 
     suspend fun removeRecent(uriString: String)
+
+    // ---- Bookmarks ----
+
+    fun observeBookmarks(uriString: String): Flow<List<Bookmark>>
+    suspend fun isBookmarked(uriString: String, pageIndex: Int): Boolean
+    suspend fun addBookmark(uriString: String, pageIndex: Int)
+    suspend fun removeBookmark(uriString: String, pageIndex: Int)
+    suspend fun toggleBookmark(uriString: String, pageIndex: Int): Boolean
 }

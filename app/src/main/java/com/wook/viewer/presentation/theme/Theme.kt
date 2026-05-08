@@ -1,6 +1,7 @@
 package com.wook.viewer.presentation.theme
 
 import android.app.Activity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -10,47 +11,61 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-/**
- * 욱뷰어 v0.5 라이트 컬러스킴 — Pencil 디자인 토큰 매핑.
- *
- * 다크모드는 v0.5에서 미적용 (FileList는 항상 라이트, Bitmap Viewer는 자체 다크 배경 사용).
- * 시스템 다이내믹 컬러도 끔 — 욱뷰어 브랜드 일관성 유지.
- */
 private val LightColors = lightColorScheme(
     primary = BrandAccent,
     onPrimary = TextOnDark,
     primaryContainer = BrandAccentLight,
     onPrimaryContainer = TextPrimary,
-
     secondary = BrandAccentDark,
     onSecondary = TextOnDark,
-
     tertiary = BannerAccent,
     onTertiary = TextOnDark,
     tertiaryContainer = BannerBg,
     onTertiaryContainer = BannerFg,
-
     background = LightBg,
     onBackground = TextPrimary,
     surface = LightSurface,
     onSurface = TextPrimary,
     surfaceVariant = LightSurfaceAlt,
     onSurfaceVariant = TextSecondary,
-
     outline = LightBorder,
     outlineVariant = LightDivider
 )
 
+private val DarkColors = darkColorScheme(
+    primary = BrandAccent,
+    onPrimary = TextOnDark,
+    primaryContainer = BrandAccentDark,
+    onPrimaryContainer = BrandAccentLight,
+    secondary = BrandAccentLight,
+    onSecondary = TextPrimary,
+    tertiary = BannerAccent,
+    onTertiary = TextOnDark,
+    tertiaryContainer = BannerBg,
+    onTertiaryContainer = BannerFg,
+    background = DarkBg,
+    onBackground = TextOnDark,
+    surface = DarkSurface,
+    onSurface = TextOnDark,
+    surfaceVariant = DarkElevated,
+    onSurfaceVariant = TextOnDarkMuted,
+    outline = DarkElevated,
+    outlineVariant = DarkSurface
+)
+
 @Composable
-fun WookViewerTheme(content: @Composable () -> Unit) {
-    val colorScheme = LightColors
+fun WookViewerTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit
+) {
+    val colorScheme = if (darkTheme) DarkColors else LightColors
 
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = true
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
 
