@@ -50,9 +50,16 @@ class SafFileSource @Inject constructor(
         val format = DocumentFormat.fromMimeType(mime)
             ?: displayName?.let { DocumentFormat.fromExtension(it) }
             ?: sniffFormat(uri)
-            ?: throw SafResolveException(
-                "지원하지 않는 형식. name=$displayName, mime=$mime, scheme=${uri.scheme}, uri=$uri"
+
+        if (format == null) {
+            // sniff 실패 사유 진단 — openInputStream을 직접 호출해 어디서 막혔는지 확인
+            val sniffDiag = diagnoseStream(uri)
+            throw SafResolveException(
+                "포맷 감지 실패. name=$displayName, mime=$mime, " +
+                "scheme=${uri.scheme}, authority=${uri.authority}, " +
+                "sniff=$sniffDiag"
             )
+        }
 
         val finalName = displayName?.takeIf { it.isNotBlank() }
             ?: "document.${format.extensions.first()}"
@@ -156,6 +163,30 @@ class SafFileSource @Inject constructor(
         }
     }.onFailure { Timber.w(it, "inspectZipFormat failed for $uri") }
         .getOrNull()
+
+    /**
+     * openInputStream을 시도하여 어디서 막혔는지 사람-읽을-수-있게 보고.
+     * 진단 메시지에만 사용 — 운영에서는 호출하지 않음.
+     */
+    private fun diagnoseStream(uri: Uri): String = try {
+        val input = resolver.openInputStream(uri)
+        if (input == null) {
+            "openInputStream returned null"
+        } else {
+            input.use {
+                val header = ByteArray(8)
+                val n = it.read(header)
+                if (n <= 0) {
+                    "stream opened but read returned $n (empty/closed)"
+                } else {
+                    val hex = header.take(n).joinToString(" ") { b -> "%02X".format(b) }
+                    "read $n bytes, header=[$hex] (no PDF/OLE/ZIP magic match)"
+                }
+            }
+        }
+    } catch (t: Throwable) {
+        "${t::class.java.simpleName}: ${t.message}"
+    }
 
     private companion object {
         val PDF_MAGIC = byteArrayOf(0x25, 0x50, 0x44, 0x46)  // %PDF

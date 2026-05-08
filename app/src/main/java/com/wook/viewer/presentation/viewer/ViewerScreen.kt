@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -180,7 +182,8 @@ private fun ErrorView(error: DocumentError, doc: Document?) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(24.dp),
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -192,9 +195,10 @@ private fun ErrorView(error: DocumentError, doc: Document?) {
             Spacer(Modifier.height(16.dp))
             Text(
                 text = debugInfo,
-                color = Color(0xFFFFB74D),  // orange — 디버그 표시
+                color = Color(0xFFFFB74D),
                 style = MaterialTheme.typography.labelSmall,
-                textAlign = TextAlign.Start
+                textAlign = TextAlign.Start,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }
@@ -206,10 +210,10 @@ private fun buildDebugInfo(error: DocumentError): String {
     val cause = error.cause
     if (cause != null) {
         sb.append("cause: ").append(cause::class.java.simpleName).append('\n')
-        sb.append("message: ").append(cause.message ?: "(null)")
-    } else {
-        sb.append("message: ").append(error.message ?: "(null)")
     }
+    // 메시지는 길 수 있으므로 줄바꿈 친화적으로 분해
+    val rawMessage = cause?.message ?: error.message ?: "(null)"
+    sb.append("message:\n").append(rawMessage)
     return sb.toString()
 }
 
