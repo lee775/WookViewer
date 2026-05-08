@@ -60,8 +60,11 @@ private fun AppNavHost(initialUri: Uri?) {
             )
         }
         composable(Routes.VIEWER) { backStack ->
+            // Compose Navigation은 query argument를 자동으로 한 번 URL-decode하므로
+            // 여기서 추가로 Uri.decode를 호출하면 안 됨 (이중 디코드 시 %3A → ':' 등으로
+            // 문자열이 바뀌어 ContentResolver의 URI 권한 매칭이 실패한다 — v0.4.4까지 발생).
             val uriArg = backStack.arguments?.getString("uri")
-            val uri = uriArg?.let { Uri.parse(Uri.decode(it)) }
+            val uri = uriArg?.let { Uri.parse(it) }
             ViewerScreen(
                 uri = uri,
                 onBack = { nav.popBackStack() }
