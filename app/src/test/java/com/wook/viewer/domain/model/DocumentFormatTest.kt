@@ -39,6 +39,20 @@ class DocumentFormatTest {
         assertEquals(DocumentFormat.PLAIN_TEXT, DocumentFormat.fromExtension("server.log"))
     }
 
+    @Test fun `xlsx and xls`() {
+        assertEquals(DocumentFormat.XLSX, DocumentFormat.fromExtension("budget.xlsx"))
+        assertEquals(DocumentFormat.XLSX, DocumentFormat.fromExtension("data.xls"))
+    }
+
+    @Test fun `image extensions`() {
+        assertEquals(DocumentFormat.IMAGE, DocumentFormat.fromExtension("photo.jpg"))
+        assertEquals(DocumentFormat.IMAGE, DocumentFormat.fromExtension("photo.JPEG"))
+        assertEquals(DocumentFormat.IMAGE, DocumentFormat.fromExtension("logo.png"))
+        assertEquals(DocumentFormat.IMAGE, DocumentFormat.fromExtension("anim.gif"))
+        assertEquals(DocumentFormat.IMAGE, DocumentFormat.fromExtension("photo.heic"))
+        assertEquals(DocumentFormat.IMAGE, DocumentFormat.fromExtension("img.webp"))
+    }
+
     @Test fun `unknown returns null`() {
         assertNull(DocumentFormat.fromExtension("noext"))
         assertNull(DocumentFormat.fromExtension("a.unknownext"))

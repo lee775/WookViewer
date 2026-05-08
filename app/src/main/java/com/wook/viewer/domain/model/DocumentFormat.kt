@@ -64,6 +64,30 @@ enum class DocumentFormat(
             "application/toml"
         ),
         fidelity = RenderingFidelity.TEXT_ONLY
+    ),
+    XLSX(
+        displayName = "Excel",
+        extensions = listOf("xls", "xlsx"),
+        mimeTypes = listOf(
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        fidelity = RenderingFidelity.TEXT_ONLY
+    ),
+    IMAGE(
+        displayName = "이미지",
+        extensions = listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif"),
+        mimeTypes = listOf(
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "image/bmp",
+            "image/heic",
+            "image/heif"
+        ),
+        // FULL — 이미지는 단순화 없이 원본 그대로 표시
+        fidelity = RenderingFidelity.FULL
     );
 
     companion object {

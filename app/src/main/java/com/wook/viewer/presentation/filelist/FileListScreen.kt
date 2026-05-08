@@ -169,6 +169,8 @@ private fun allMimeTypes(): Array<String> = arrayOf(
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-powerpoint",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/x-hwp",
     "application/haansofthwp",
     "application/vnd.hancom.hwpx",
@@ -178,6 +180,8 @@ private fun allMimeTypes(): Array<String> = arrayOf(
     "application/xml",
     "application/yaml",
     "application/toml",
+    // 이미지
+    "image/*",
     // 폴백
     "application/octet-stream"
 )

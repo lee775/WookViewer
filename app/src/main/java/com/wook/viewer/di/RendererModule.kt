@@ -5,9 +5,11 @@ import com.wook.viewer.domain.repository.RendererRegistry
 import com.wook.viewer.render.RendererRegistryImpl
 import com.wook.viewer.render.docx.DocxDocumentRenderer
 import com.wook.viewer.render.hwp.HwpDocumentRenderer
+import com.wook.viewer.render.image.ImageDocumentRenderer
 import com.wook.viewer.render.pdf.PdfDocumentRenderer
 import com.wook.viewer.render.pptx.PptxDocumentRenderer
 import com.wook.viewer.render.text.PlainTextDocumentRenderer
+import com.wook.viewer.render.xlsx.XlsxDocumentRenderer
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -49,4 +51,12 @@ abstract class RendererModule {
     @Binds
     @IntoSet
     abstract fun bindPlainTextRenderer(impl: PlainTextDocumentRenderer): DocumentRenderer
+
+    @Binds
+    @IntoSet
+    abstract fun bindXlsxRenderer(impl: XlsxDocumentRenderer): DocumentRenderer
+
+    @Binds
+    @IntoSet
+    abstract fun bindImageRenderer(impl: ImageDocumentRenderer): DocumentRenderer
 }

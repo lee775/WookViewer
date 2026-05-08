@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">WookViewer</string>
+    <string name="app_name">욱뷰어</string>
 
     <!-- 화면 제목 -->
     <string name="title_recent">최근 문서</string>

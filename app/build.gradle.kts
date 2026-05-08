@@ -14,8 +14,8 @@ android {
         applicationId = "com.wook.viewer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.4.8"
+        versionCode = 12
+        versionName = "0.4.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -84,6 +84,7 @@ dependencies {
 
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.documentfile)
+    implementation(libs.androidx.exifinterface)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
