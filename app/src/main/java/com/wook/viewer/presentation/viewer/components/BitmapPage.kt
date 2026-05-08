@@ -9,11 +9,12 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -31,38 +33,37 @@ import androidx.compose.ui.unit.dp
 import com.wook.viewer.presentation.theme.DarkBg
 
 /**
- * 비트맵 페이지 — 핀치 줌 + 더블탭 토글 + 팬.
+ * 비트맵 페이지 — LazyColumn 안에 인라인으로 들어간다.
  *
- * 핵심 제약: VerticalPager 안에 들어가므로 줌 1배일 때 한 손가락 드래그는 pager에
- * 양도해야 한다 (안 그러면 다음 페이지 못 넘어감). transformable 대신
- * awaitEachGesture로 직접 제스처 처리:
+ * 레이아웃:
+ *  - 폭: 부모 폭에 채움
+ *  - 높이: 비트맵 비율로 (PDF A4면 폭의 1.41배)
+ *  - 줌은 graphicsLayer로 시각만 — 레이아웃 슬롯은 고정 (clipToBounds로 넘침 잘라냄)
  *
- *   - 두 손가락(핀치, zoom != 1f)        → 줌 적용 + consume
- *   - 줌됨(scale > 1f) + 한 손가락 pan   → 이미지 팬 + consume
- *   - 줌 안됨(scale == 1f) + 한 손가락   → consume 안 함 → pager가 처리
- *
- * 페이지가 바뀌면 줌 상태 자동 리셋.
+ * 제스처:
+ *  - 두 손가락 핀치 → 줌 (1x..5x), consume
+ *  - 줌 1배 + 한 손가락 드래그 → consume 안 함 → LazyColumn이 받아 페이지 흐름 스크롤
+ *  - 줌됨 + 한 손가락 드래그 → 페이지 안에서 팬, consume
+ *  - 더블 탭 → 1x ↔ 2.5x 토글
  */
 @Composable
-fun BitmapPage(
+fun BitmapPageInline(
     bitmap: Bitmap?,
     onWidthChanged: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    resetKey: Any? = null
+    fallbackAspectRatio: Float = 1f / 1.41f  // A4 폭/높이 비율
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    val aspect = bitmap?.let { it.width.toFloat() / it.height.toFloat() } ?: fallbackAspectRatio
 
-    LaunchedEffect(resetKey) {
-        scale = 1f
-        offset = Offset.Zero
-    }
+    var scale by remember(bitmap) { mutableFloatStateOf(1f) }
+    var offset by remember(bitmap) { mutableStateOf(Offset.Zero) }
 
     Box(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
+            .aspectRatio(aspect)
             .background(DarkBg)
-            .padding(24.dp)
+            .clipToBounds()
             .onSizeChanged { onWidthChanged(it.width) },
         contentAlignment = Alignment.Center
     ) {
@@ -109,8 +110,8 @@ fun BitmapPage(
                                     event.changes.forEach { it.consume() }
                                 }
 
-                                // 줌된 상태에서의 pan → consume (이미지 이동)
-                                // 줌 1배에서의 pan → consume 안 함 → pager가 받음
+                                // 줌됨 + pan → 페이지 안에서 팬 (consume)
+                                // 줌 1배 + pan → consume 안 함 → LazyColumn 스크롤
                                 if (scale > 1f && pan != Offset.Zero) {
                                     offset += pan
                                     event.changes.forEach { it.consume() }

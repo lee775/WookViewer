@@ -14,8 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.pager.VerticalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,12 +64,12 @@ import com.wook.viewer.presentation.theme.DarkBg
 import com.wook.viewer.presentation.theme.DarkSurface
 import com.wook.viewer.presentation.theme.TextOnDark
 import com.wook.viewer.presentation.theme.TextOnDarkMuted
-import com.wook.viewer.presentation.viewer.components.BitmapPage
+import com.wook.viewer.presentation.viewer.components.BitmapPageInline
 import com.wook.viewer.presentation.viewer.components.BookmarksSheet
 import com.wook.viewer.presentation.viewer.components.LimitationsDialog
 import com.wook.viewer.presentation.viewer.components.RenderingNoticeBanner
 import com.wook.viewer.presentation.viewer.components.SearchBar
-import com.wook.viewer.presentation.viewer.components.TextPage
+import com.wook.viewer.presentation.viewer.components.TextPageInline
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
@@ -166,7 +166,8 @@ fun ViewerScreen(
                     loadBitmap = vm::renderBitmap,
                     loadText = vm::getPageText,
                     matchesForPage = vm::matchesForPage,
-                    activeMatchRange = vm::activeMatchRange
+                    activeMatchRange = vm::activeMatchRange,
+                    pageBgColor = bgColor
                 )
             }
         }
@@ -303,60 +304,74 @@ private fun PageContent(
     loadBitmap: suspend (index: Int, widthPx: Int) -> Bitmap?,
     loadText: suspend (index: Int) -> String?,
     matchesForPage: (Int) -> List<IntRange>,
-    activeMatchRange: (Int) -> IntRange?
+    activeMatchRange: (Int) -> IntRange?,
+    pageBgColor: Color
 ) {
-    val pagerState = rememberPagerState(
-        initialPage = currentIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0)),
-        pageCount = { pageCount }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = currentIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
     )
 
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }
+    // 화면 중앙에 가장 가까운 페이지를 "현재 페이지"로 추적
+    val visibleCenterIndex by androidx.compose.runtime.derivedStateOf {
+        val info = listState.layoutInfo
+        val viewportCenter = (info.viewportStartOffset + info.viewportEndOffset) / 2
+        info.visibleItemsInfo.minByOrNull { item ->
+            kotlin.math.abs((item.offset + item.size / 2) - viewportCenter)
+        }?.index ?: listState.firstVisibleItemIndex
+    }
+
+    LaunchedEffect(listState) {
+        snapshotFlow { visibleCenterIndex }
             .distinctUntilChanged()
             .collect { onPageChanged(it) }
     }
 
-    // VM이 currentIndex를 강제로 바꾼 경우 (검색/북마크 jump) pager에 동기화
+    // VM이 currentIndex를 강제로 바꾼 경우 (검색/북마크 jump) → 그 페이지로 스크롤
     LaunchedEffect(currentIndex) {
-        if (pagerState.currentPage != currentIndex) {
-            pagerState.scrollToPage(currentIndex)
+        if (visibleCenterIndex != currentIndex) {
+            listState.animateScrollToItem(currentIndex)
         }
     }
 
-    VerticalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { pageIndex ->
-        if (isTextFormat) {
-            TextPagerItem(
-                pageIndex = pageIndex,
-                loadText = loadText,
-                matches = matchesForPage(pageIndex),
-                activeMatch = activeMatchRange(pageIndex)
-            )
-        } else {
-            BitmapPagerItem(pageIndex = pageIndex, loadBitmap = loadBitmap)
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(pageCount, key = { it }) { pageIndex ->
+            if (isTextFormat) {
+                TextItem(
+                    pageIndex = pageIndex,
+                    loadText = loadText,
+                    matches = matchesForPage(pageIndex),
+                    activeMatch = activeMatchRange(pageIndex)
+                )
+            } else {
+                BitmapItem(pageIndex = pageIndex, loadBitmap = loadBitmap)
+            }
+        }
+        item("bottom_spacer") {
+            Box(modifier = Modifier.fillMaxWidth().height(56.dp).background(pageBgColor))
         }
     }
 }
 
 @Composable
-private fun BitmapPagerItem(
+private fun BitmapItem(
     pageIndex: Int,
     loadBitmap: suspend (index: Int, widthPx: Int) -> Bitmap?
 ) {
-    var widthPx by remember { mutableIntStateOf(0) }
+    var widthPx by remember(pageIndex) { mutableIntStateOf(0) }
     var bitmap by remember(pageIndex) { mutableStateOf<Bitmap?>(null) }
 
     LaunchedEffect(pageIndex, widthPx) {
         if (widthPx > 0) bitmap = loadBitmap(pageIndex, widthPx)
     }
-    BitmapPage(
-        bitmap = bitmap,
-        onWidthChanged = { widthPx = it },
-        resetKey = pageIndex
-    )
+    BitmapPageInline(bitmap = bitmap, onWidthChanged = { widthPx = it })
 }
 
 @Composable
-private fun TextPagerItem(
+private fun TextItem(
     pageIndex: Int,
     loadText: suspend (index: Int) -> String?,
     matches: List<IntRange>,
@@ -364,7 +379,7 @@ private fun TextPagerItem(
 ) {
     var text by remember(pageIndex) { mutableStateOf<String?>(null) }
     LaunchedEffect(pageIndex) { text = loadText(pageIndex) ?: "" }
-    TextPage(text = text, matches = matches, activeMatch = activeMatch)
+    TextPageInline(text = text, matches = matches, activeMatch = activeMatch)
 }
 
 @Composable

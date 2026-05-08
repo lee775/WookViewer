@@ -2,11 +2,11 @@ package com.wook.viewer.presentation.viewer.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,14 +22,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 텍스트 페이지 (HWP/DOCX/PPTX/XLSX/MD/TXT 등 TEXT_ONLY).
+ * 텍스트 페이지 — LazyColumn 안에 인라인으로 들어간다.
  *
- * v0.5.1: 검색 매치 하이라이트 지원.
- *  - matches: 모든 매치 범위 (노란색 배경)
- *  - activeMatch: 현재 활성 매치 (주황색 배경, 더 강조)
+ * 부모 LazyColumn이 전체 스크롤을 담당하므로 자체 verticalScroll 없음.
+ * 대신 wrapContentHeight로 텍스트 길이만큼 슬롯이 늘어남.
+ *
+ * SelectionContainer는 그대로 — 길게 눌러 선택, 시스템 메뉴 복사.
  */
 @Composable
-fun TextPage(
+fun TextPageInline(
     text: String?,
     matches: List<IntRange> = emptyList(),
     activeMatch: IntRange? = null,
@@ -37,34 +38,40 @@ fun TextPage(
 ) {
     Box(
         modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface),
-        contentAlignment = Alignment.Center
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(20.dp),
+        contentAlignment = Alignment.TopStart
     ) {
         when (text) {
-            null -> CircularProgressIndicator()
+            null -> Box(
+                modifier = Modifier.fillMaxWidth().height(120.dp),
+                contentAlignment = Alignment.Center
+            ) { CircularProgressIndicator() }
+
             "" -> Text(
                 text = "(빈 페이지)",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 14.sp,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
             )
+
             else -> {
                 val rendered = if (matches.isEmpty()) {
                     AnnotatedString(text)
                 } else {
                     highlightMatches(text, matches, activeMatch)
                 }
-                SelectionContainer(modifier = Modifier.fillMaxSize()) {
+                SelectionContainer {
                     Text(
                         text = rendered,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 15.sp,
                         lineHeight = 24.sp,
                         modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                            .padding(20.dp)
+                            .fillMaxWidth()
+                            .wrapContentHeight()
                     )
                 }
             }
@@ -72,8 +79,8 @@ fun TextPage(
     }
 }
 
-private val MatchBg = Color(0xFFFFF59D)       // 부드러운 노란색
-private val MatchActiveBg = Color(0xFFFFB74D) // 주황색 (현재 매치)
+private val MatchBg = Color(0xFFFFF59D)
+private val MatchActiveBg = Color(0xFFFFB74D)
 
 private fun highlightMatches(
     text: String,
