@@ -12,6 +12,7 @@ import com.wook.viewer.domain.repository.DocumentRenderer
 import com.wook.viewer.domain.repository.DocumentRepository
 import com.wook.viewer.domain.repository.RendererRegistry
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,33 +45,39 @@ class ViewerViewModel @Inject constructor(
 
     private var renderer: DocumentRenderer? = null
     private var handle: DocumentHandle? = null
+    private var loadJob: Job? = null
     private var renderJob: Job? = null
 
     fun load(uri: Uri, targetWidthPx: Int) {
-        if (_state.value.document?.uri == uri) return
+        if (_state.value.document?.uri == uri && _state.value.error == null) return
+        // 진행 중이던 로드/렌더가 있으면 취소 — 이게 없으면 두 번째 load의 renderPage가
+        // 첫 번째 renderJob을 cancel시키고 catch가 cancellation을 일반 에러로 보고함
+        loadJob?.cancel()
+        renderJob?.cancel()
         closeCurrentHandle()
-        _state.update { it.copy(loading = true, error = null, pageBitmap = null) }
+        _state.update {
+            it.copy(loading = true, error = null, pageBitmap = null, document = null, pageCount = 0)
+        }
 
-        viewModelScope.launch {
-            val doc = try {
-                repo.resolveDocument(uri)
-            } catch (t: Throwable) {
-                _state.update { it.copy(loading = false, error = DocumentError.IoError(t)) }
-                return@launch
-            }
-            if (doc == null) {
-                _state.update { it.copy(loading = false, error = DocumentError.IoError()) }
-                return@launch
-            }
-            val r = registry.rendererFor(doc.format)
-            if (r == null) {
-                _state.update {
-                    it.copy(loading = false, document = doc, error = DocumentError.UnsupportedVariant(doc.format.displayName))
-                }
-                return@launch
-            }
-
+        loadJob = viewModelScope.launch {
             try {
+                val doc = repo.resolveDocument(uri)
+                if (doc == null) {
+                    _state.update { it.copy(loading = false, error = DocumentError.IoError()) }
+                    return@launch
+                }
+                val r = registry.rendererFor(doc.format)
+                if (r == null) {
+                    _state.update {
+                        it.copy(
+                            loading = false,
+                            document = doc,
+                            error = DocumentError.UnsupportedVariant(doc.format.displayName)
+                        )
+                    }
+                    return@launch
+                }
+
                 val h = r.open(uri)
                 renderer = r
                 handle = h
@@ -84,10 +91,13 @@ class ViewerViewModel @Inject constructor(
                     )
                 }
                 renderPage(0, targetWidthPx)
+            } catch (e: CancellationException) {
+                // 정상적인 취소 (load/render 재진입 등) — 에러로 보고하지 않고 재던짐
+                throw e
             } catch (e: DocumentError) {
-                _state.update { it.copy(loading = false, document = doc, error = e) }
+                _state.update { it.copy(loading = false, error = e) }
             } catch (t: Throwable) {
-                _state.update { it.copy(loading = false, document = doc, error = DocumentError.Unknown(t)) }
+                _state.update { it.copy(loading = false, error = DocumentError.Unknown(t)) }
             }
         }
     }
@@ -109,7 +119,10 @@ class ViewerViewModel @Inject constructor(
         renderJob = viewModelScope.launch {
             try {
                 val rendered = r.renderPage(h, index, targetWidthPx)
-                _state.update { it.copy(pageBitmap = rendered.bitmap) }
+                // 성공 시 이전 에러도 함께 클리어 (이전 렌더 실패 후 재시도 케이스)
+                _state.update { it.copy(pageBitmap = rendered.bitmap, error = null) }
+            } catch (e: CancellationException) {
+                throw e  // 취소는 에러 아님
             } catch (e: DocumentError) {
                 _state.update { it.copy(error = e) }
             } catch (t: Throwable) {
