@@ -11,3 +11,9 @@ local.properties
 *.apk
 *.aab
 *.keystore
+
+# Build artifacts (downloaded from GitHub Actions)
+/apk-output/
+
+# Test samples (regenerable via scripts/generate_test_samples.py)
+/test-samples/

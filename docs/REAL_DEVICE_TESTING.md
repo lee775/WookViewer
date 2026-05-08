@@ -31,6 +31,29 @@ C:\WOOK\WookViewer\apk-output\WookViewer-debug\WookViewer-debug.apk   (~18 MB)
 ### 1.4 설치 확인
 앱 실행 → 상단 좌측에 **"최근 문서"** 와 그 아래 **"v0.4.1 · debug"** 부제목이 보이면 정상.
 
+### 1.5 테스트용 샘플 문서
+
+테스트할 파일이 없으면 다음 명령으로 즉시 생성 (Python 3.x 필요):
+
+```powershell
+python C:\WOOK\WookViewer\scripts\generate_test_samples.py
+```
+
+생성되는 파일 (`C:\WOOK\WookViewer\test-samples\`):
+
+| 파일 | 용도 |
+|---|---|
+| `WookViewer-test.pdf` | 2페이지 영문 — 페이지 이동/줌/팬/배너 미표시 검증 |
+| `WookViewer-test.docx` | 한글+영문 혼합, 단락/표/특수문자 — TEXT_ONLY 동작 검증 |
+| `WookViewer-test.pptx` | 12장 슬라이드 — **자연수 정렬 회귀 검증** (slide10이 slide2 뒤) |
+
+이 3개 파일도 APK와 동일한 방법(카톡 나에게 / Drive / USB)으로 폰에 전송.
+
+> **HWP/HWPX 샘플** — OLE 바이너리(.hwp) 또는 OWPML(.hwpx) 스펙이 복잡해 코드 생성 미지원.
+> - 한컴오피스 설치된 PC에서 한 줄짜리 .hwp 저장
+> - 정부24/학교 공문 등 공개 .hwp 다운로드
+> - 한컴 [샘플 문서](https://www.hancom.com/) 페이지 등 활용
+
 ---
 
 ## 2. 검증 체크리스트
