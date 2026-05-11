@@ -39,7 +39,9 @@ jobs:
       - name: Setup Android SDK + NDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-28 build-tools;28.0.3 ndk;25.2.9519653'
+          # NDK r25.2 의 clang 14가 LO cppcanvas 모듈 옵티마이저 단계에서 크래시 →
+          # r26d (clang 17) 로 업그레이드해 버그 회피
+          packages: 'platforms;android-28 build-tools;28.0.3 ndk;26.3.11579264'
 
       - name: Install build dependencies
         run: |
@@ -93,7 +95,7 @@ jobs:
       - name: Configure LibreOffice for Android (${{ matrix.abi }})
         working-directory: lo-core
         env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
         run: |
           # LO는 distro-configs/ 에 ABI별 설정 파일을 둠.
           # --with-distro=X 는 distro-configs/X.conf 를 읽음.
