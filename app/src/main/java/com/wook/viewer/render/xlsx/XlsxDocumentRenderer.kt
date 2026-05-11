@@ -11,7 +11,6 @@ import com.wook.viewer.domain.repository.DocumentHandle
 import com.wook.viewer.domain.repository.DocumentRenderer
 import com.wook.viewer.render.text.TextPage
 import com.wook.viewer.render.text.TextPageRenderer
-import com.wook.viewer.render.text.TextPaginator
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,6 +18,14 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * XLSX 렌더러 — 1 시트 = 1 페이지.
+ *
+ * 변경(v0.6.4):
+ *   - 시트를 텍스트 길이 기준으로 페이지화하지 않고 시트 그대로 보관
+ *   - getSectionLabels 로 시트 이름 노출 → UI가 탭으로 보여줄 수 있음
+ *   - 시트별 이미지는 sheet rels → drawing rels 추적으로 매핑
+ */
 @Singleton
 class XlsxDocumentRenderer @Inject constructor(
     @ApplicationContext private val context: Context
@@ -28,8 +35,7 @@ class XlsxDocumentRenderer @Inject constructor(
 
     private class Handle(
         override val uri: Uri,
-        val pages: List<TextPage>,
-        val images: List<Bitmap>
+        val sheets: List<XlsxTextExtractor.Sheet>
     ) : DocumentHandle
 
     override suspend fun open(uri: Uri): DocumentHandle = withContext(Dispatchers.IO) {
@@ -40,7 +46,7 @@ class XlsxDocumentRenderer @Inject constructor(
             throw DocumentError.UnsupportedVariant("xls (구형 바이너리)")
         }
 
-        val content = try {
+        val sheets = try {
             context.contentResolver.openInputStream(uri).use { input ->
                 requireNotNull(input) { "openInputStream returned null for $uri" }
                 XlsxTextExtractor.extract(input)
@@ -53,22 +59,12 @@ class XlsxDocumentRenderer @Inject constructor(
             throw classifyError(t)
         }
 
-        val pages = content.sheets.flatMap { sheet ->
-            val header = "[${sheet.name}]\n"
-            val body = if (sheet.text.isBlank()) "(빈 시트)" else sheet.text
-            val full = header + body
-            if (full.length <= TextPaginator.APPROX_CHARS_PER_PAGE) {
-                listOf(TextPage(full))
-            } else {
-                TextPaginator.paginate(full)
-            }
-        }
-        Timber.d("XLSX 열기 완료: sheets=${content.sheets.size}, pages=${pages.size}, images=${content.images.size}")
-        Handle(uri, pages, content.images)
+        Timber.d("XLSX 열기 완료: sheets=${sheets.size}, totalImages=${sheets.sumOf { it.images.size }}")
+        Handle(uri, sheets)
     }
 
     override suspend fun pageCount(handle: DocumentHandle): Int =
-        (handle as Handle).pages.size
+        (handle as Handle).sheets.size
 
     override suspend fun pageSize(handle: DocumentHandle, index: Int): PageSize =
         PageSize(595f, 842f)
@@ -79,24 +75,37 @@ class XlsxDocumentRenderer @Inject constructor(
         targetWidthPx: Int
     ): RenderedPage = withContext(Dispatchers.Default) {
         val h = handle as Handle
-        val page = h.pages.getOrElse(index) { TextPage("(잘못된 페이지 인덱스: $index)") }
-        TextPageRenderer.render(page, targetWidthPx, index)
+        val sheet = h.sheets.getOrElse(index) {
+            return@withContext TextPageRenderer.render(
+                TextPage("(잘못된 시트 인덱스: $index)"),
+                targetWidthPx,
+                index
+            )
+        }
+        val body = if (sheet.text.isBlank()) "(빈 시트)" else sheet.text
+        TextPageRenderer.render(TextPage("[${sheet.name}]\n$body"), targetWidthPx, index)
     }
 
     override suspend fun getPageText(handle: DocumentHandle, index: Int): String? {
         val h = handle as Handle
-        return h.pages.getOrNull(index)?.text
+        val sheet = h.sheets.getOrNull(index) ?: return null
+        val body = if (sheet.text.isBlank()) "(빈 시트)" else sheet.text
+        return "[${sheet.name}]\n\n$body"
     }
 
-    /** XLSX는 위치 정보가 복잡해서 모든 이미지를 첫 페이지에 표시. */
     override suspend fun getPageImages(handle: DocumentHandle, index: Int): List<Bitmap> {
         val h = handle as Handle
-        return if (index == 0) h.images else emptyList()
+        return h.sheets.getOrNull(index)?.images ?: emptyList()
+    }
+
+    override suspend fun getSectionLabels(handle: DocumentHandle): List<String>? {
+        val h = handle as Handle
+        return h.sheets.map { it.name }
     }
 
     override suspend fun close(handle: DocumentHandle) {
         val h = handle as Handle
-        h.images.forEach { runCatching { it.recycle() } }
+        h.sheets.flatMap { it.images }.forEach { runCatching { it.recycle() } }
     }
 
     private fun classifyError(t: Throwable): DocumentError {

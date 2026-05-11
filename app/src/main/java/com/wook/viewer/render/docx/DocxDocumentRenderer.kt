@@ -5,13 +5,13 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.wook.viewer.domain.error.DocumentError
 import com.wook.viewer.domain.model.DocumentFormat
+import com.wook.viewer.domain.model.PageElement
 import com.wook.viewer.domain.model.PageSize
 import com.wook.viewer.domain.model.RenderedPage
 import com.wook.viewer.domain.repository.DocumentHandle
 import com.wook.viewer.domain.repository.DocumentRenderer
 import com.wook.viewer.render.text.TextPage
 import com.wook.viewer.render.text.TextPageRenderer
-import com.wook.viewer.render.text.TextPaginator
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,6 +19,15 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * DOCX 렌더러 — 인라인 이미지 위치 보존.
+ *
+ * Segment 기반 페이지네이션:
+ *   - 텍스트 누적 길이 기준 페이지 분할
+ *   - 이미지는 자기 위치(텍스트 흐름상 인접한 텍스트)와 함께 그 페이지에 속함
+ *
+ * 이미지가 없는 일반 DOCX는 기존처럼 텍스트만 페이지화.
+ */
 @Singleton
 class DocxDocumentRenderer @Inject constructor(
     @ApplicationContext private val context: Context
@@ -28,8 +37,8 @@ class DocxDocumentRenderer @Inject constructor(
 
     private class Handle(
         override val uri: Uri,
-        val pages: List<TextPage>,
-        val images: List<Bitmap>
+        val pages: List<List<PageElement>>,
+        val plainPages: List<TextPage>
     ) : DocumentHandle
 
     override suspend fun open(uri: Uri): DocumentHandle = withContext(Dispatchers.IO) {
@@ -53,9 +62,12 @@ class DocxDocumentRenderer @Inject constructor(
             throw classifyDocxError(t)
         }
 
-        val pages = TextPaginator.paginate(content.text)
-        Timber.d("DOCX 열기 완료: pages=${pages.size}, chars=${content.text.length}, images=${content.images.size}")
-        Handle(uri, pages, content.images)
+        val pages = paginateSegments(content.elements)
+        val plainPages = pages.map { elems ->
+            TextPage(elems.filterIsInstance<PageElement.TextElement>().joinToString("") { it.text })
+        }
+        Timber.d("DOCX 열기 완료: pages=${pages.size}, totalImages=${content.images.size}")
+        Handle(uri, pages, plainPages)
     }
 
     override suspend fun pageCount(handle: DocumentHandle): Int =
@@ -70,7 +82,7 @@ class DocxDocumentRenderer @Inject constructor(
         targetWidthPx: Int
     ): RenderedPage = withContext(Dispatchers.Default) {
         val h = handle as Handle
-        val page = h.pages.getOrElse(index) {
+        val page = h.plainPages.getOrElse(index) {
             TextPage("(잘못된 페이지 인덱스: $index)")
         }
         TextPageRenderer.render(page, targetWidthPx, index)
@@ -78,18 +90,84 @@ class DocxDocumentRenderer @Inject constructor(
 
     override suspend fun getPageText(handle: DocumentHandle, index: Int): String? {
         val h = handle as Handle
-        return h.pages.getOrNull(index)?.text
+        return h.plainPages.getOrNull(index)?.text
     }
 
-    /** DOCX는 위치 정보가 복잡해서 모든 이미지를 첫 페이지에 표시. */
     override suspend fun getPageImages(handle: DocumentHandle, index: Int): List<Bitmap> {
         val h = handle as Handle
-        return if (index == 0) h.images else emptyList()
+        return h.pages.getOrNull(index)
+            ?.filterIsInstance<PageElement.ImageElement>()
+            ?.map { it.bitmap }
+            ?: emptyList()
+    }
+
+    override suspend fun getPageElements(
+        handle: DocumentHandle,
+        index: Int
+    ): List<PageElement>? {
+        val h = handle as Handle
+        return h.pages.getOrNull(index)
     }
 
     override suspend fun close(handle: DocumentHandle) {
         val h = handle as Handle
-        h.images.forEach { runCatching { it.recycle() } }
+        h.pages.flatten()
+            .filterIsInstance<PageElement.ImageElement>()
+            .forEach { runCatching { it.bitmap.recycle() } }
+    }
+
+    /** segment 단위로 페이지 분할 — 텍스트 길이 누적 기준, 이미지는 "공짜". */
+    private fun paginateSegments(
+        elements: List<PageElement>
+    ): List<List<PageElement>> {
+        if (elements.isEmpty()) return listOf(emptyList())
+
+        val pages = mutableListOf<MutableList<PageElement>>()
+        var current = mutableListOf<PageElement>()
+        var currentChars = 0
+
+        for (elem in elements) {
+            when (elem) {
+                is PageElement.TextElement -> {
+                    val text = elem.text
+                    if (text.length > LIMIT) {
+                        // 매우 긴 단일 텍스트 → 강제 잘라서 여러 페이지로
+                        var remaining = text
+                        while (remaining.isNotEmpty()) {
+                            val space = LIMIT - currentChars
+                            if (space <= 0) {
+                                pages += current
+                                current = mutableListOf()
+                                currentChars = 0
+                                continue
+                            }
+                            val chunk = remaining.take(space)
+                            current += PageElement.TextElement(chunk)
+                            currentChars += chunk.length
+                            remaining = remaining.drop(space)
+                            if (currentChars >= LIMIT) {
+                                pages += current
+                                current = mutableListOf()
+                                currentChars = 0
+                            }
+                        }
+                    } else {
+                        if (currentChars + text.length > LIMIT && current.isNotEmpty()) {
+                            pages += current
+                            current = mutableListOf()
+                            currentChars = 0
+                        }
+                        current += elem
+                        currentChars += text.length
+                    }
+                }
+                is PageElement.ImageElement -> {
+                    current += elem  // 이미지는 길이 카운트 안 함
+                }
+            }
+        }
+        if (current.isNotEmpty()) pages += current
+        return pages.ifEmpty { listOf(emptyList()) }
     }
 
     private fun classifyDocxError(t: Throwable): DocumentError {
@@ -102,5 +180,9 @@ class DocxDocumentRenderer @Inject constructor(
             else ->
                 DocumentError.Corrupted(t)
         }
+    }
+
+    private companion object {
+        const val LIMIT = 1500  // TextPaginator.APPROX_CHARS_PER_PAGE 와 동일
     }
 }

@@ -51,14 +51,30 @@ interface DocumentRenderer {
     /**
      * 페이지에 포함된 임베디드 이미지 (TEXT_ONLY 포맷용).
      *
-     * Office/HWP 같은 ZIP 기반 포맷은 본문 텍스트만으로는 시각 정보가 빠지므로,
-     * 문서 안의 그림 파일을 꺼내서 UI에 함께 표시한다.
-     *
-     * - PPTX: 슬라이드별로 해당 슬라이드에 참조된 이미지만 반환
-     * - DOCX/XLSX/HWP: 위치 정보가 어려워 첫 페이지(index == 0)에 모두 표시
-     * - PDF/IMAGE: 기본 빈 리스트 (이미 비트맵 자체가 시각 그대로)
+     * 위치 정보가 없는 단순 표시용 — 자세한 위치는 [getPageElements] 사용.
      */
     suspend fun getPageImages(handle: DocumentHandle, index: Int): List<android.graphics.Bitmap> = emptyList()
+
+    /**
+     * 페이지를 텍스트/이미지 요소의 순서가 있는 리스트로 제공 (DOCX 인라인 그림 등).
+     *
+     * null 반환 시 UI는 [getPageText] + [getPageImages] 폴백을 사용한다.
+     * 위치를 보존하고 싶은 렌더러만 오버라이드.
+     */
+    suspend fun getPageElements(
+        handle: DocumentHandle,
+        index: Int
+    ): List<com.wook.viewer.domain.model.PageElement>? = null
+
+    /**
+     * 문서가 명시적 "섹션 선택" UI를 제공해야 하는 경우 섹션 이름 리스트.
+     *
+     * - XLSX: 시트 이름들 (사용자가 시트 탭으로 선택)
+     * - 그 외: null (일반 페이지 모델 사용)
+     *
+     * 반환 길이는 [pageCount] 와 동일해야 한다 (각 페이지가 하나의 섹션).
+     */
+    suspend fun getSectionLabels(handle: DocumentHandle): List<String>? = null
 
     /** 핸들 닫기. */
     suspend fun close(handle: DocumentHandle)

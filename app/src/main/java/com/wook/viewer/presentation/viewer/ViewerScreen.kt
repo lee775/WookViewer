@@ -64,11 +64,13 @@ import com.wook.viewer.presentation.theme.DarkBg
 import com.wook.viewer.presentation.theme.DarkSurface
 import com.wook.viewer.presentation.theme.TextOnDark
 import com.wook.viewer.presentation.theme.TextOnDarkMuted
+import com.wook.viewer.domain.model.PageElement
 import com.wook.viewer.presentation.viewer.components.BitmapPageInline
 import com.wook.viewer.presentation.viewer.components.BookmarksSheet
 import com.wook.viewer.presentation.viewer.components.LimitationsDialog
 import com.wook.viewer.presentation.viewer.components.RenderingNoticeBanner
 import com.wook.viewer.presentation.viewer.components.SearchBar
+import com.wook.viewer.presentation.viewer.components.SheetTabs
 import com.wook.viewer.presentation.viewer.components.TextPageInline
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -148,6 +150,16 @@ fun ViewerScreen(
             )
         }
 
+        // XLSX 등 섹션 라벨이 있는 포맷은 상단에 시트 탭 표시
+        val labels = state.sectionLabels
+        if (labels != null && labels.size > 1) {
+            SheetTabs(
+                labels = labels,
+                selectedIndex = state.currentIndex,
+                onSelect = vm::selectSection
+            )
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -166,6 +178,7 @@ fun ViewerScreen(
                     loadBitmap = vm::renderBitmap,
                     loadText = vm::getPageText,
                     loadImages = vm::getPageImages,
+                    loadElements = vm::getPageElements,
                     matchesForPage = vm::matchesForPage,
                     activeMatchRange = vm::activeMatchRange,
                     pageBgColor = bgColor
@@ -305,6 +318,7 @@ private fun PageContent(
     loadBitmap: suspend (index: Int, widthPx: Int) -> Bitmap?,
     loadText: suspend (index: Int) -> String?,
     loadImages: suspend (index: Int) -> List<Bitmap>,
+    loadElements: suspend (index: Int) -> List<PageElement>?,
     matchesForPage: (Int) -> List<IntRange>,
     activeMatchRange: (Int) -> IntRange?,
     pageBgColor: Color
@@ -346,6 +360,7 @@ private fun PageContent(
                     pageIndex = pageIndex,
                     loadText = loadText,
                     loadImages = loadImages,
+                    loadElements = loadElements,
                     matches = matchesForPage(pageIndex),
                     activeMatch = activeMatchRange(pageIndex)
                 )
@@ -378,20 +393,30 @@ private fun TextItem(
     pageIndex: Int,
     loadText: suspend (index: Int) -> String?,
     loadImages: suspend (index: Int) -> List<Bitmap>,
+    loadElements: suspend (index: Int) -> List<PageElement>?,
     matches: List<IntRange>,
     activeMatch: IntRange?
 ) {
     var text by remember(pageIndex) { mutableStateOf<String?>(null) }
     var images by remember(pageIndex) { mutableStateOf<List<Bitmap>>(emptyList()) }
+    var elements by remember(pageIndex) { mutableStateOf<List<PageElement>?>(null) }
     LaunchedEffect(pageIndex) {
-        text = loadText(pageIndex) ?: ""
-        images = loadImages(pageIndex)
+        elements = loadElements(pageIndex)
+        // 인라인 요소가 있으면 text/images 폴백은 불필요
+        if (elements.isNullOrEmpty()) {
+            text = loadText(pageIndex) ?: ""
+            images = loadImages(pageIndex)
+        } else {
+            text = ""
+            images = emptyList()
+        }
     }
     TextPageInline(
         text = text,
         matches = matches,
         activeMatch = activeMatch,
-        images = images
+        images = images,
+        elements = elements
     )
 }
 

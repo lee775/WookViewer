@@ -45,6 +45,9 @@ data class ViewerUiState(
     // PDF 보기 모드
     val pdfViewMode: PdfViewMode = PdfViewMode.BITMAP,
 
+    // 섹션(XLSX 시트 등) — null이면 일반 페이지 모델
+    val sectionLabels: List<String>? = null,
+
     // 검색
     val searchActive: Boolean = false,
     val searchQuery: String = "",
@@ -127,12 +130,14 @@ class ViewerViewModel @Inject constructor(
                 renderer = r
                 handle = h
                 val count = r.pageCount(h)
+                val labels = r.getSectionLabels(h)
                 _state.update {
                     it.copy(
                         loading = false,
                         document = doc,
                         pageCount = count,
-                        currentIndex = 0
+                        currentIndex = 0,
+                        sectionLabels = labels
                     )
                 }
                 observeBookmarks(doc.uri.toString())
@@ -202,6 +207,23 @@ class ViewerViewModel @Inject constructor(
         } catch (t: Throwable) {
             emptyList()
         }
+    }
+
+    suspend fun getPageElements(index: Int): List<com.wook.viewer.domain.model.PageElement>? {
+        val r = renderer ?: return null
+        val h = handle ?: return null
+        return try {
+            r.getPageElements(h, index)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    /** XLSX 시트 탭 등에서 호출. */
+    fun selectSection(index: Int) {
+        jumpToPage(index)
     }
 
     // ---- 검색 ----
