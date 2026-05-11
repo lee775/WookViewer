@@ -148,23 +148,11 @@ jobs:
         run: |
           # LO의 Android Gradle 단계에 lint 가 'abortOnError=true' 로 설정되어 있어
           # LO 자체 Java 코드의 사소한 경고로도 빌드가 죽음. 우리는 .so만 필요.
-          # 빌드 전에 LO의 lint 설정 무력화.
+          # 빌드 전에 LO의 lint 설정 무력화 (printf로 append — YAML 친화)
           GRADLE_CONFIG="$LO_SRC/android/source/build.gradle"
           if [ -f "$GRADLE_CONFIG" ]; then
             echo "== Patching LO Android Gradle to disable lint =="
-            # lint 블록에 abortOnError false + ignoreWarnings true 강제
-            cat >> "$GRADLE_CONFIG" <<'EOF'
-
-// Patched by WookViewer build workflow — we only need liblo-native-code.so,
-// LO's UI lint errors are irrelevant for our use case.
-android {
-    lint {
-        abortOnError = false
-        checkReleaseBuilds = false
-        ignoreWarnings = true
-    }
-}
-EOF
+            printf '\n\n// Patched by WookViewer workflow\nandroid { lint { abortOnError = false; checkReleaseBuilds = false; ignoreWarnings = true } }\n' >> "$GRADLE_CONFIG"
           fi
 
           # ccache 가 캐시 hit 시 컴파일 시간 거의 0 — 재시도가 매우 빠름.
