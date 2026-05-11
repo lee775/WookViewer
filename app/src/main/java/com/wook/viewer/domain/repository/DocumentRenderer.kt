@@ -78,6 +78,13 @@ interface DocumentRenderer {
     ): List<com.wook.viewer.domain.model.PageElement>? = null
 
     /**
+     * 문서 내부 목차(Outline/Bookmarks 트리). 현재는 PDF만 지원.
+     *
+     * null 또는 빈 리스트면 UI에 목차 아이콘을 표시하지 않는다.
+     */
+    suspend fun getOutline(handle: DocumentHandle): List<com.wook.viewer.domain.model.OutlineNode>? = null
+
+    /**
      * 문서가 명시적 "섹션 선택" UI를 제공해야 하는 경우 섹션 이름 리스트.
      *
      * - XLSX: 시트 이름들 (사용자가 시트 탭으로 선택)

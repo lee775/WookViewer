@@ -7,9 +7,14 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
+import com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionGoTo
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDNamedDestination
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPageDestination
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import com.wook.viewer.domain.error.DocumentError
 import com.wook.viewer.domain.model.DocumentFormat
+import com.wook.viewer.domain.model.OutlineNode
 import com.wook.viewer.domain.model.PageSize
 import com.wook.viewer.domain.model.RenderedPage
 import com.wook.viewer.domain.repository.DocumentHandle
@@ -225,6 +230,80 @@ class PdfDocumentRenderer @Inject constructor(
             }
         }
 
+    override suspend fun getOutline(handle: DocumentHandle): List<OutlineNode>? =
+        withContext(Dispatchers.IO) {
+            val h = handle as Handle
+            val doc = h.pdDocument ?: return@withContext null
+            val outline = runCatching {
+                doc.documentCatalog?.documentOutline
+            }.getOrNull() ?: return@withContext null
+
+            val roots = mutableListOf<OutlineNode>()
+            var child: PDOutlineItem? = runCatching { outline.firstChild }.getOrNull()
+            while (child != null) {
+                runCatching { toOutlineNode(child!!, doc, depth = 0) }
+                    .getOrNull()
+                    ?.let { roots += it }
+                child = runCatching { child!!.nextSibling }.getOrNull()
+            }
+            roots.takeIf { it.isNotEmpty() }
+        }
+
+    /** PDOutlineItem 트리를 재귀 변환. 깊이 제한으로 순환 방어. */
+    private fun toOutlineNode(item: PDOutlineItem, doc: PDDocument, depth: Int): OutlineNode {
+        val title = (item.title ?: "").trim()
+        val pageIndex = resolvePageIndex(item, doc)
+        val children = mutableListOf<OutlineNode>()
+        if (depth < MAX_OUTLINE_DEPTH) {
+            var child: PDOutlineItem? = runCatching { item.firstChild }.getOrNull()
+            while (child != null) {
+                runCatching { toOutlineNode(child!!, doc, depth + 1) }
+                    .getOrNull()
+                    ?.let { children += it }
+                child = runCatching { child!!.nextSibling }.getOrNull()
+            }
+        }
+        return OutlineNode(title = title, pageIndex = pageIndex, children = children)
+    }
+
+    /** 목차 항목의 목적지를 0-기반 페이지 번호로 변환. 실패 시 null. */
+    private fun resolvePageIndex(item: PDOutlineItem, doc: PDDocument): Int? {
+        // 1. 직접 destination
+        runCatching {
+            when (val dest = item.destination) {
+                is PDPageDestination -> {
+                    val n = dest.retrievePageNumber()
+                    if (n >= 0) return n
+                }
+                is PDNamedDestination -> {
+                    val resolved = doc.documentCatalog?.findNamedDestinationPage(dest)
+                    val n = resolved?.retrievePageNumber()
+                    if (n != null && n >= 0) return n
+                }
+                else -> Unit
+            }
+        }
+        // 2. Action 경유 (PDActionGoTo)
+        runCatching {
+            val action = item.action
+            if (action is PDActionGoTo) {
+                when (val ad = action.destination) {
+                    is PDPageDestination -> {
+                        val n = ad.retrievePageNumber()
+                        if (n >= 0) return n
+                    }
+                    is PDNamedDestination -> {
+                        val resolved = doc.documentCatalog?.findNamedDestinationPage(ad)
+                        val n = resolved?.retrievePageNumber()
+                        if (n != null && n >= 0) return n
+                    }
+                    else -> Unit
+                }
+            }
+        }
+        return null
+    }
+
     override suspend fun close(handle: DocumentHandle) {
         val h = handle as Handle
         withContext(Dispatchers.IO) {
@@ -240,5 +319,6 @@ class PdfDocumentRenderer @Inject constructor(
     private companion object {
         const val MAX_DIMENSION = 4096
         const val UNLOCK_CACHE_DIR = "pdf-unlocked"
+        const val MAX_OUTLINE_DEPTH = 20
     }
 }

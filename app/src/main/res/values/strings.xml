@@ -40,6 +40,10 @@
     <string name="error_unsupported_variant">지원하지 않는 %1$s 버전입니다.</string>
     <string name="error_unknown">문서를 여는 중 알 수 없는 오류가 발생했습니다.</string>
 
+    <!-- 목차 -->
+    <string name="action_outline">목차</string>
+    <string name="outline_sheet_title">목차</string>
+
     <!-- 공유 -->
     <string name="action_share">공유</string>
     <string name="share_chooser_title">공유</string>

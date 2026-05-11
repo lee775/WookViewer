@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -71,6 +72,7 @@ import com.wook.viewer.domain.model.PageElement
 import com.wook.viewer.presentation.viewer.components.BitmapPageInline
 import com.wook.viewer.presentation.viewer.components.BookmarksSheet
 import com.wook.viewer.presentation.viewer.components.LimitationsDialog
+import com.wook.viewer.presentation.viewer.components.OutlineSheet
 import com.wook.viewer.presentation.viewer.components.PasswordPromptDialog
 import com.wook.viewer.presentation.viewer.components.RenderingNoticeBanner
 import com.wook.viewer.presentation.viewer.components.SearchBar
@@ -96,6 +98,7 @@ fun ViewerScreen(
     var showLimitationsDialog by rememberSaveable { mutableStateOf(false) }
     var showBookmarksSheet by rememberSaveable { mutableStateOf(false) }
     var showShareSheet by rememberSaveable { mutableStateOf(false) }
+    var showOutlineSheet by rememberSaveable { mutableStateOf(false) }
     // 비밀번호 다이얼로그 — 사용자가 취소를 눌러서 닫았는지 추적해 다시 열리는 걸 막음
     var passwordDialogDismissed by rememberSaveable(state.document?.uri?.toString() ?: "") {
         mutableStateOf(false)
@@ -141,6 +144,7 @@ fun ViewerScreen(
                 pageCount = state.pageCount,
                 searchSupported = vm.isSearchSupported,
                 shareSupported = state.document != null && state.error == null,
+                hasOutline = !state.outline.isNullOrEmpty(),
                 bookmarked = state.currentPageBookmarked,
                 bookmarkCount = state.bookmarks.size,
                 showPdfModeToggle = format == DocumentFormat.PDF,
@@ -152,6 +156,7 @@ fun ViewerScreen(
                 onBack = onBack,
                 onSearch = { vm.setSearchActive(true) },
                 onShare = { showShareSheet = true },
+                onShowOutline = { showOutlineSheet = true },
                 onToggleBookmark = vm::toggleCurrentBookmark,
                 onShowBookmarks = { showBookmarksSheet = true },
                 onTogglePdfMode = vm::togglePdfViewMode
@@ -233,6 +238,17 @@ fun ViewerScreen(
         )
     }
 
+    if (showOutlineSheet) {
+        val outline = state.outline
+        if (!outline.isNullOrEmpty()) {
+            OutlineSheet(
+                outline = outline,
+                onJumpTo = vm::jumpToPage,
+                onDismiss = { showOutlineSheet = false }
+            )
+        }
+    }
+
     if (showShareSheet) {
         val ctx = LocalContext.current
         val scope = rememberCoroutineScope()
@@ -284,6 +300,7 @@ private fun ViewerTopBar(
     pageCount: Int,
     searchSupported: Boolean,
     shareSupported: Boolean,
+    hasOutline: Boolean,
     bookmarked: Boolean,
     bookmarkCount: Int,
     showPdfModeToggle: Boolean,
@@ -295,6 +312,7 @@ private fun ViewerTopBar(
     onBack: () -> Unit,
     onSearch: () -> Unit,
     onShare: () -> Unit,
+    onShowOutline: () -> Unit,
     onToggleBookmark: () -> Unit,
     onShowBookmarks: () -> Unit,
     onTogglePdfMode: () -> Unit
@@ -344,6 +362,16 @@ private fun ViewerTopBar(
         if (searchSupported) {
             TopBarIconButton(iconBg = iconBg, onClick = onSearch) {
                 Icon(Icons.Filled.Search, contentDescription = "검색", tint = textColor)
+            }
+            Spacer(Modifier.width(4.dp))
+        }
+        if (hasOutline) {
+            TopBarIconButton(iconBg = iconBg, onClick = onShowOutline) {
+                Icon(
+                    Icons.AutoMirrored.Filled.List,
+                    contentDescription = stringResource(R.string.action_outline),
+                    tint = textColor
+                )
             }
             Spacer(Modifier.width(4.dp))
         }

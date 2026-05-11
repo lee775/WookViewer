@@ -48,6 +48,9 @@ data class ViewerUiState(
     // 섹션(XLSX 시트 등) — null이면 일반 페이지 모델
     val sectionLabels: List<String>? = null,
 
+    // 문서 내부 목차 (PDF Outline 등) — null/빈 리스트면 아이콘 미노출
+    val outline: List<com.wook.viewer.domain.model.OutlineNode>? = null,
+
     // 검색
     val searchActive: Boolean = false,
     val searchQuery: String = "",
@@ -154,12 +157,14 @@ class ViewerViewModel @Inject constructor(
                 handle = h
                 val count = r.pageCount(h)
                 val labels = r.getSectionLabels(h)
+                val outline = r.getOutline(h)
                 _state.update {
                     it.copy(
                         loading = false,
                         pageCount = count,
                         currentIndex = 0,
-                        sectionLabels = labels
+                        sectionLabels = labels,
+                        outline = outline
                     )
                 }
                 observeBookmarks(doc.uri.toString())
