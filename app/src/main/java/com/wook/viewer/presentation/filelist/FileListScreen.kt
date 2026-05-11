@@ -21,8 +21,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,7 +38,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.wook.viewer.R
 import com.wook.viewer.app.BuildInfo
+import com.wook.viewer.domain.model.RecentSortOrder
 import com.wook.viewer.presentation.filelist.components.FileCard
 import com.wook.viewer.presentation.theme.BrandAccent
 import com.wook.viewer.presentation.theme.BrandAccentLight
@@ -86,7 +92,13 @@ fun FileListScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { WookTopBar(onOpenSettings = onOpenSettings) },
+        topBar = {
+            WookTopBar(
+                sortOrder = state.sortOrder,
+                onSortChange = vm::setSortOrder,
+                onOpenSettings = onOpenSettings
+            )
+        },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
@@ -127,7 +139,12 @@ fun FileListScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(state.recent, key = { it.uriString }) { item ->
-                        FileCard(item = item, onClick = { vm.onRecentClicked(item) })
+                        FileCard(
+                            item = item,
+                            onClick = { vm.onRecentClicked(item) },
+                            onTogglePin = { vm.togglePin(item) },
+                            onDelete = { vm.removeRecent(item) }
+                        )
                     }
                 }
             }
@@ -136,9 +153,14 @@ fun FileListScreen(
 }
 
 @Composable
-private fun WookTopBar(onOpenSettings: () -> Unit) {
+private fun WookTopBar(
+    sortOrder: RecentSortOrder,
+    onSortChange: (RecentSortOrder) -> Unit,
+    onOpenSettings: () -> Unit
+) {
     val ctx = LocalContext.current
     val buildLabel = remember { BuildInfo.displayLabel(ctx) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -173,6 +195,39 @@ private fun WookTopBar(onOpenSettings: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp
             )
+        }
+        Box {
+            IconButton(onClick = { sortMenuOpen = true }) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Sort,
+                    contentDescription = stringResource(R.string.action_sort),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            DropdownMenu(
+                expanded = sortMenuOpen,
+                onDismissRequest = { sortMenuOpen = false }
+            ) {
+                RecentSortOrder.entries.forEach { order ->
+                    val labelRes = when (order) {
+                        RecentSortOrder.RECENT -> R.string.sort_recent
+                        RecentSortOrder.NAME -> R.string.sort_name
+                    }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(labelRes),
+                                fontWeight = if (sortOrder == order) FontWeight.Bold
+                                else FontWeight.Normal
+                            )
+                        },
+                        onClick = {
+                            sortMenuOpen = false
+                            onSortChange(order)
+                        }
+                    )
+                }
+            }
         }
         IconButton(onClick = onOpenSettings) {
             Icon(

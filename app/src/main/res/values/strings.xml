@@ -13,6 +13,13 @@
     <string name="action_dismiss">닫기</string>
     <string name="action_more_info">자세히</string>
     <string name="action_close">닫기</string>
+    <string name="action_more">더보기</string>
+    <string name="action_pin">핀 고정</string>
+    <string name="action_unpin">핀 해제</string>
+    <string name="action_delete_recent">최근 목록에서 삭제</string>
+    <string name="action_sort">정렬</string>
+    <string name="sort_recent">최근 열어본 순</string>
+    <string name="sort_name">이름순</string>
 
     <!-- 빈 상태 -->
     <string name="empty_recent">아직 연 문서가 없습니다.\n+ 버튼으로 파일을 열어 보세요.</string>

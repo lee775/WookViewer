@@ -9,5 +9,6 @@ data class RecentDocumentEntity(
     val displayName: String,
     val formatName: String,
     val lastOpenedAt: Long,
-    val lastPageIndex: Int = 0
+    val lastPageIndex: Int = 0,
+    val pinned: Boolean = false
 )

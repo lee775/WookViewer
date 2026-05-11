@@ -2,6 +2,7 @@ package com.wook.viewer.di
 
 import android.content.Context
 import androidx.room.Room
+import com.wook.viewer.data.local.MIGRATION_2_3
 import com.wook.viewer.data.local.WookDatabase
 import com.wook.viewer.data.local.dao.RecentDocumentDao
 import dagger.Module
@@ -19,8 +20,8 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): WookDatabase =
         Room.databaseBuilder(context, WookDatabase::class.java, WookDatabase.NAME)
-            // v0.5 알파 — 마이그레이션 미정의. 사용자 데이터(최근 목록)는 destructively
-            // 다시 만들 만한 영향이라 OK. 정식 출시 전 마이그레이션 정의 필요.
+            .addMigrations(MIGRATION_2_3)
+            // 미래에 정의 안 된 버전 점프가 나면 데이터 소실 허용 (사용자 데이터는 최근 목록 + 북마크)
             .fallbackToDestructiveMigration(false)
             .build()
 

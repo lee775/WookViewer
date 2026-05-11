@@ -10,6 +10,7 @@ import com.wook.viewer.domain.model.Bookmark
 import com.wook.viewer.domain.model.Document
 import com.wook.viewer.domain.model.DocumentFormat
 import com.wook.viewer.domain.model.RecentDocument
+import com.wook.viewer.domain.model.RecentSortOrder
 import com.wook.viewer.domain.repository.DocumentRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -29,23 +30,35 @@ class DocumentRepositoryImpl @Inject constructor(
         return doc
     }
 
-    override fun observeRecent(limit: Int): Flow<List<RecentDocument>> =
-        dao.observeAll(limit).map { rows -> rows.map(::toDomain) }
+    override fun observeRecent(order: RecentSortOrder, limit: Int): Flow<List<RecentDocument>> {
+        val flow = when (order) {
+            RecentSortOrder.RECENT -> dao.observeAllByRecent(limit)
+            RecentSortOrder.NAME -> dao.observeAllByName(limit)
+        }
+        return flow.map { rows -> rows.map(::toDomain) }
+    }
 
     override suspend fun addOrUpdateRecent(doc: Document, lastPageIndex: Int) {
+        // upsert는 REPLACE 전략 — 기존 pinned 상태가 덮어써지므로 명시적으로 보존
+        val existingPinned = dao.getPinned(doc.uri.toString()) ?: false
         dao.upsert(
             RecentDocumentEntity(
                 uriString = doc.uri.toString(),
                 displayName = doc.displayName,
                 formatName = doc.format.name,
                 lastOpenedAt = System.currentTimeMillis(),
-                lastPageIndex = lastPageIndex
+                lastPageIndex = lastPageIndex,
+                pinned = existingPinned
             )
         )
     }
 
     override suspend fun updateLastPage(uriString: String, pageIndex: Int) {
         dao.updateLastPage(uriString, pageIndex, System.currentTimeMillis())
+    }
+
+    override suspend fun setPinned(uriString: String, pinned: Boolean) {
+        dao.setPinned(uriString, pinned)
     }
 
     override suspend fun removeRecent(uriString: String) {
@@ -94,6 +107,7 @@ class DocumentRepositoryImpl @Inject constructor(
         displayName = e.displayName,
         format = runCatching { DocumentFormat.valueOf(e.formatName) }.getOrDefault(DocumentFormat.PDF),
         lastOpenedAt = e.lastOpenedAt,
-        lastPageIndex = e.lastPageIndex
+        lastPageIndex = e.lastPageIndex,
+        pinned = e.pinned
     )
 }

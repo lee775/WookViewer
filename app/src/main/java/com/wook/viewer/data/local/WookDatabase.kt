@@ -9,7 +9,7 @@ import com.wook.viewer.data.local.entity.RecentDocumentEntity
 
 @Database(
     entities = [RecentDocumentEntity::class, BookmarkEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class WookDatabase : RoomDatabase() {
