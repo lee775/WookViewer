@@ -16,7 +16,7 @@ import javax.xml.parsers.SAXParserFactory
  * 시트 ↔ 이미지 매핑 흐름:
  *   1. xl/_rels/sheet{N}.xml.rels 에서 drawing 참조 (Target="../drawings/drawingX.xml")
  *   2. xl/drawings/_rels/drawing{X}.xml.rels 에서 image 참조 (Target="../media/imageY.png")
- *   3. 모든 비트맵은 xl/media/*.png 등
+ *   3. 모든 비트맵은 xl/media/ 안의 png 등
  */
 internal object XlsxTextExtractor {
 

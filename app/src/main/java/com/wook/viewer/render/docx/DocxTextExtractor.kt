@@ -16,7 +16,7 @@ import javax.xml.parsers.SAXParserFactory
  *
  * 파싱 절차:
  *   1. word/_rels/document.xml.rels 에서 rId → media 파일명 매핑 작성
- *   2. word/media/*.{png,jpg,...} 비트맵으로 디코드
+ *   2. word/media/ 안의 png/jpg/... 비트맵으로 디코드
  *   3. word/document.xml 을 SAX로 순회하며 텍스트와 a:blip 의 r:embed 를 만나는 순간
  *      현재까지의 텍스트를 끊고 ImageElement 삽입, 다시 다음 TextElement 시작
  *
