@@ -16,7 +16,7 @@ import javax.xml.parsers.SAXParserFactory
  * 슬라이드 → 이미지 매핑 흐름:
  *   1. ppt/slides/slide{N}.xml 본문
  *   2. ppt/slides/_rels/slide{N}.xml.rels 가 r:id → 미디어 경로 ("../media/image1.png") 매핑
- *   3. ppt/media/*.png|jpg|... 실제 바이트
+ *   3. ppt/media/{이미지파일}.png/jpg/... 실제 바이트
  *
  * 따라서 각 슬라이드는 자기 rels에 명시된 이미지만 보유. 모든 이미지가 모든
  * 슬라이드에 중복 표시되는 일은 없음.
