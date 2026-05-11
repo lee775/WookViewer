@@ -18,7 +18,7 @@ class DocxTextExtractorTest {
 
     @Test fun `빈 본문은 빈 문자열`() {
         val docx = makeDocx(body = "")
-        val text = DocxTextExtractor.extract(docx)
+        val text = DocxTextExtractor.extract(docx).text
         assertEquals("", text)
     }
 
@@ -26,7 +26,7 @@ class DocxTextExtractorTest {
         val docx = makeDocx(body = """
             <w:p><w:r><w:t>안녕하세요</w:t></w:r></w:p>
         """.trimIndent())
-        val text = DocxTextExtractor.extract(docx)
+        val text = DocxTextExtractor.extract(docx).text
         assertEquals("안녕하세요", text)
     }
 
@@ -35,7 +35,7 @@ class DocxTextExtractorTest {
             <w:p><w:r><w:t>첫째 단락</w:t></w:r></w:p>
             <w:p><w:r><w:t>둘째 단락</w:t></w:r></w:p>
         """.trimIndent())
-        val text = DocxTextExtractor.extract(docx)
+        val text = DocxTextExtractor.extract(docx).text
         assertEquals("첫째 단락\n둘째 단락", text)
     }
 
@@ -47,7 +47,7 @@ class DocxTextExtractorTest {
               <w:r><w:t>World</w:t></w:r>
             </w:p>
         """.trimIndent())
-        val text = DocxTextExtractor.extract(docx)
+        val text = DocxTextExtractor.extract(docx).text
         assertEquals("Hello World", text)
     }
 
@@ -57,7 +57,7 @@ class DocxTextExtractorTest {
               <w:r><w:t>A</w:t><w:tab/><w:t>B</w:t><w:br/><w:t>C</w:t></w:r>
             </w:p>
         """.trimIndent())
-        val text = DocxTextExtractor.extract(docx)
+        val text = DocxTextExtractor.extract(docx).text
         assertEquals("A\tB\nC", text)
     }
 
@@ -74,7 +74,7 @@ class DocxTextExtractorTest {
               </w:tr>
             </w:tbl>
         """.trimIndent())
-        val text = DocxTextExtractor.extract(docx)
+        val text = DocxTextExtractor.extract(docx).text
         // 셀 텍스트가 모두 들어 있고, 각 행이 분리됨
         assertTrue("이름 셀이 포함: '$text'", text.contains("이름"))
         assertTrue("나이 셀이 포함: '$text'", text.contains("나이"))
@@ -86,7 +86,7 @@ class DocxTextExtractorTest {
         val docx = makeDocx(body = """
             <w:p><w:r><w:t>&lt;a&gt; &amp; &quot;b&quot;</w:t></w:r></w:p>
         """.trimIndent())
-        val text = DocxTextExtractor.extract(docx)
+        val text = DocxTextExtractor.extract(docx).text
         assertEquals("<a> & \"b\"", text)
     }
 

@@ -29,7 +29,7 @@ class PptxTextExtractorTest {
         ))
         val slides = PptxTextExtractor.extract(pptx)
         assertEquals(1, slides.size)
-        assertEquals("Hello", slides[0])
+        assertEquals("Hello", slides[0].text)
     }
 
     @Test fun `슬라이드 자연수 정렬 - slide10이 slide2 뒤에 위치`() {
@@ -43,7 +43,7 @@ class PptxTextExtractorTest {
         // 알파벳 정렬이면 [Slide1, Slide10, Slide11, Slide2, …]가 되어야 하는데
         // 자연수 정렬은 [Slide1, Slide2, …, Slide10, Slide11]
         (1..11).forEachIndexed { idx, num ->
-            assertEquals("순서 $idx 슬라이드", "Slide$num", texts[idx])
+            assertEquals("순서 $idx 슬라이드", "Slide$num", texts[idx].text)
         }
     }
 
@@ -58,7 +58,7 @@ class PptxTextExtractorTest {
                 </p:sp>
             """.trimIndent())
         ))
-        val texts = PptxTextExtractor.extract(pptx)
+        val texts = PptxTextExtractor.extract(pptx).map { it.text }
         assertEquals(1, texts.size)
         assertTrue("제목 포함: '${texts[0]}'", texts[0].contains("제목"))
         assertTrue("본문 포함", texts[0].contains("본문"))
@@ -83,7 +83,7 @@ class PptxTextExtractorTest {
             """.trimIndent())
         ))
         val texts = PptxTextExtractor.extract(pptx)
-        val text = texts[0]
+        val text = texts[0].text
         listOf("A", "B", "C", "D").forEach {
             assertTrue("$it 포함", text.contains(it))
         }
@@ -94,7 +94,7 @@ class PptxTextExtractorTest {
             1 to slideXml("<a:p><a:r><a:t>L1</a:t><a:br/><a:t>L2</a:t></a:r></a:p>")
         ))
         val texts = PptxTextExtractor.extract(pptx)
-        assertEquals("L1\nL2", texts[0])
+        assertEquals("L1\nL2", texts[0].text)
     }
 
     @Test fun `XML 엔티티 디코딩`() {
@@ -102,7 +102,7 @@ class PptxTextExtractorTest {
             1 to slideXml("<a:p><a:r><a:t>&lt;tag&gt; &amp; &quot;q&quot;</a:t></a:r></a:p>")
         ))
         val texts = PptxTextExtractor.extract(pptx)
-        assertEquals("<tag> & \"q\"", texts[0])
+        assertEquals("<tag> & \"q\"", texts[0].text)
     }
 
     @Test fun `ZIP 아니면 PptxFormatException`() {
@@ -129,7 +129,7 @@ class PptxTextExtractorTest {
         }
         val texts = PptxTextExtractor.extract(ByteArrayInputStream(out.toByteArray()))
         assertEquals(1, texts.size)
-        assertEquals("real", texts[0])
+        assertEquals("real", texts[0].text)
     }
 
     // ---- helpers ----
