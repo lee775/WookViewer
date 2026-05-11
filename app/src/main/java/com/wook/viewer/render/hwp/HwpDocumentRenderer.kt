@@ -237,12 +237,20 @@ class HwpDocumentRenderer @Inject constructor(
             for (paragraph in paragraphs) {
                 if (paragraph == null) continue
 
+                // 단락 텍스트 — charList의 HWPCharNormal들을 직접 이어붙임
                 val paraText = runCatching {
-                    kr.dogfoot.hwplib.tool.textextractor.TextExtractor.extract(
-                        paragraph as kr.dogfoot.hwplib.`object`.bodytext.Paragraph,
-                        kr.dogfoot.hwplib.tool.textextractor.TextExtractMethod
-                            .InsertControlTextBetweenParagraphText
-                    )
+                    val textObj = invokeGetter(paragraph, "getText")
+                    val charList = invokeGetter(textObj, "getCharList") as? List<*>
+                        ?: return@runCatching ""
+                    val sb = StringBuilder()
+                    for (hc in charList) {
+                        if (hc == null) continue
+                        val sn = hc.javaClass.simpleName ?: continue
+                        if (!sn.contains("Normal", ignoreCase = true)) continue
+                        val code = invokeGetter(hc, "getCode") as? Number ?: continue
+                        sb.append(code.toInt().toChar())
+                    }
+                    sb.toString()
                 }.getOrDefault("")
 
                 val controls = invokeGetter(paragraph, "getControlList") as? List<*>
