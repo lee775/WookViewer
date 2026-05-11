@@ -111,7 +111,7 @@ class XlsxDocumentRenderer @Inject constructor(
     private fun classifyError(t: Throwable): DocumentError {
         val msg = (t.message ?: "").lowercase()
         return when {
-            "encrypt" in msg || "password" in msg -> DocumentError.PasswordProtected(t)
+            "encrypt" in msg || "password" in msg -> DocumentError.PasswordProtected(cause = t)
             t is java.io.IOException -> DocumentError.IoError(t)
             else -> DocumentError.Corrupted(t)
         }

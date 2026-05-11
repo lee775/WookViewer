@@ -100,33 +100,56 @@ class ViewerViewModel @Inject constructor(
 
     fun load(uri: Uri) {
         if (_state.value.document?.uri == uri && _state.value.error == null) return
+        startLoad(uri, password = null)
+    }
+
+    /** 비밀번호 다이얼로그에서 호출. 현재 문서를 비밀번호와 함께 다시 연다. */
+    fun unlockWithPassword(password: String) {
+        val uri = _state.value.document?.uri
+            ?: return  // 문서 정보조차 없는 케이스 — 비정상
+        if (password.isEmpty()) return
+        startLoad(uri, password = password)
+    }
+
+    private fun startLoad(uri: Uri, password: String?) {
         loadJob?.cancel()
         searchJob?.cancel()
         bookmarkJob?.cancel()
         closeCurrentHandle()
         pageTextCache.clear()
-        _state.update { ViewerUiState(loading = true) }
+
+        // 비밀번호 재시도는 document 정보를 유지해야 다이얼로그가 계속 노출됨
+        val preservedDoc = _state.value.document.takeIf { password != null }
+        _state.update {
+            ViewerUiState(
+                loading = true,
+                document = preservedDoc
+            )
+        }
 
         loadJob = viewModelScope.launch {
             try {
-                val doc = repo.resolveDocument(uri)
+                val doc = preservedDoc ?: repo.resolveDocument(uri)
                 if (doc == null) {
                     _state.update { it.copy(loading = false, error = DocumentError.IoError()) }
                     return@launch
                 }
+                // document를 먼저 설정 — open() 중 PasswordProtected 에러가 나도
+                // unlockWithPassword가 URI를 알 수 있도록
+                _state.update { it.copy(document = doc) }
+
                 val r = registry.rendererFor(doc.format)
                 if (r == null) {
                     _state.update {
                         it.copy(
                             loading = false,
-                            document = doc,
                             error = DocumentError.UnsupportedVariant(doc.format.displayName)
                         )
                     }
                     return@launch
                 }
 
-                val h = r.open(uri)
+                val h = if (password != null) r.open(uri, password) else r.open(uri)
                 renderer = r
                 handle = h
                 val count = r.pageCount(h)
@@ -134,7 +157,6 @@ class ViewerViewModel @Inject constructor(
                 _state.update {
                     it.copy(
                         loading = false,
-                        document = doc,
                         pageCount = count,
                         currentIndex = 0,
                         sectionLabels = labels

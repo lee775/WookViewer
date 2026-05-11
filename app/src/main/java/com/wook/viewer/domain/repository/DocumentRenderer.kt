@@ -20,6 +20,17 @@ interface DocumentRenderer {
     /** 문서를 열고 핸들을 반환한다. 닫지 않으면 자원이 누수된다. */
     suspend fun open(uri: Uri): DocumentHandle
 
+    /**
+     * 비밀번호와 함께 문서를 연다 (암호 보호 문서용).
+     *
+     * 기본 구현은 [open] 으로 위임 — 비밀번호를 무시한다.
+     * 비밀번호 해제를 지원하는 렌더러만 오버라이드 (현재 PDF만 지원).
+     *
+     * 잘못된 비밀번호면 [com.wook.viewer.domain.error.DocumentError.PasswordProtected]
+     * (wrongPassword=true)를 던진다.
+     */
+    suspend fun open(uri: Uri, password: String): DocumentHandle = open(uri)
+
     /** 페이지(또는 슬라이드/화면) 수. */
     suspend fun pageCount(handle: DocumentHandle): Int
 

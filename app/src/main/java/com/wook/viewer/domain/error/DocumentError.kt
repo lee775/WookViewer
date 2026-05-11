@@ -14,8 +14,16 @@ sealed class DocumentError(
     /** 파일을 SAF/파일시스템에서 읽지 못함 (권한 만료, 삭제됨, 네트워크 끊김 등). */
     class IoError(cause: Throwable? = null) : DocumentError("io", cause)
 
-    /** 암호로 보호된 문서. */
-    class PasswordProtected(cause: Throwable? = null) : DocumentError("password", cause)
+    /**
+     * 암호로 보호된 문서.
+     *
+     * @param wrongPassword true면 사용자가 비밀번호를 입력했으나 일치하지 않은 상태,
+     *                      false면 아직 시도하지 않은 상태 (다이얼로그 첫 노출).
+     */
+    class PasswordProtected(
+        val wrongPassword: Boolean = false,
+        cause: Throwable? = null
+    ) : DocumentError("password", cause)
 
     /** 파일이 손상되었거나 라이브러리가 해석하지 못함. */
     class Corrupted(cause: Throwable? = null) : DocumentError("corrupted", cause)

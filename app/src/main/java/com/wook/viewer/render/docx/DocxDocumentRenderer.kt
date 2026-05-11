@@ -177,7 +177,7 @@ class DocxDocumentRenderer @Inject constructor(
         val msg = (t.message ?: "").lowercase()
         return when {
             "encrypt" in msg || "password" in msg ->
-                DocumentError.PasswordProtected(t)
+                DocumentError.PasswordProtected(cause = t)
             t is java.io.IOException ->
                 DocumentError.IoError(t)
             else ->

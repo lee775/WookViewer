@@ -68,6 +68,7 @@ import com.wook.viewer.domain.model.PageElement
 import com.wook.viewer.presentation.viewer.components.BitmapPageInline
 import com.wook.viewer.presentation.viewer.components.BookmarksSheet
 import com.wook.viewer.presentation.viewer.components.LimitationsDialog
+import com.wook.viewer.presentation.viewer.components.PasswordPromptDialog
 import com.wook.viewer.presentation.viewer.components.RenderingNoticeBanner
 import com.wook.viewer.presentation.viewer.components.SearchBar
 import com.wook.viewer.presentation.viewer.components.SheetTabs
@@ -87,6 +88,10 @@ fun ViewerScreen(
     }
     var showLimitationsDialog by rememberSaveable { mutableStateOf(false) }
     var showBookmarksSheet by rememberSaveable { mutableStateOf(false) }
+    // 비밀번호 다이얼로그 — 사용자가 취소를 눌러서 닫았는지 추적해 다시 열리는 걸 막음
+    var passwordDialogDismissed by rememberSaveable(state.document?.uri?.toString() ?: "") {
+        mutableStateOf(false)
+    }
 
     LaunchedEffect(uri) {
         if (uri != null) vm.load(uri)
@@ -205,6 +210,16 @@ fun ViewerScreen(
             onJumpTo = vm::jumpToPage,
             onRemove = vm::removeBookmarkAt,
             onDismiss = { showBookmarksSheet = false }
+        )
+    }
+
+    val pwError = state.error as? DocumentError.PasswordProtected
+    if (pwError != null && !passwordDialogDismissed) {
+        PasswordPromptDialog(
+            wrongPasswordAttempt = pwError.wrongPassword,
+            canUnlock = format == DocumentFormat.PDF,
+            onSubmit = { vm.unlockWithPassword(it) },
+            onDismiss = { passwordDialogDismissed = true }
         )
     }
 }

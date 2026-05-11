@@ -85,7 +85,7 @@ class HwpDocumentRenderer @Inject constructor(
         val msg = (t.message ?: "").lowercase()
         return when {
             "password" in msg || "encrypt" in msg || "암호" in msg ->
-                DocumentError.PasswordProtected(t)
+                DocumentError.PasswordProtected(cause = t)
             "unsupported" in msg || "version" in msg ->
                 DocumentError.UnsupportedVariant("hwp/hwpx", t)
             "io" in msg || "stream" in msg || "eof" in msg ->

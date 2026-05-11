@@ -6,7 +6,9 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.text.PDFTextStripper
+import com.wook.viewer.domain.error.DocumentError
 import com.wook.viewer.domain.model.DocumentFormat
 import com.wook.viewer.domain.model.PageSize
 import com.wook.viewer.domain.model.RenderedPage
@@ -18,6 +20,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -45,13 +48,40 @@ class PdfDocumentRenderer @Inject constructor(
         val pfd: ParcelFileDescriptor,
         val renderer: PdfRenderer,
         val pdDocument: PDDocument?,
+        /** 비밀번호 해제 후 만들어진 캐시 파일. close 시 삭제. null이면 일반 PDF. */
+        val unlockedCache: File? = null,
         val mutex: Mutex = Mutex()
     ) : DocumentHandle
 
     override suspend fun open(uri: Uri): DocumentHandle = withContext(Dispatchers.IO) {
-        val pfd = context.contentResolver.openFileDescriptor(uri, "r")
-            ?: error("Cannot open file descriptor for $uri")
-        val renderer = PdfRenderer(pfd)
+        // 1차: 평문 PDF 로드 시도
+        val pfd = try {
+            context.contentResolver.openFileDescriptor(uri, "r")
+                ?: error("Cannot open file descriptor for $uri")
+        } catch (t: Throwable) {
+            throw t
+        }
+
+        val renderer = try {
+            PdfRenderer(pfd)
+        } catch (se: SecurityException) {
+            // 암호 PDF — PdfRenderer는 SecurityException 던짐
+            runCatching { pfd.close() }
+            Timber.i("PDF 암호 보호 감지 (PdfRenderer SecurityException)")
+            throw DocumentError.PasswordProtected(wrongPassword = false, cause = se)
+        } catch (t: Throwable) {
+            runCatching { pfd.close() }
+            // PdfBox로 다시 시도해 암호 보호 여부 식별
+            val isEncrypted = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    PDDocument.load(input).use { it.isEncrypted }
+                } ?: false
+            }.getOrDefault(false)
+            if (isEncrypted) {
+                throw DocumentError.PasswordProtected(wrongPassword = false, cause = t)
+            }
+            throw t
+        }
 
         // PdfBox는 별도 InputStream으로 로드 (PdfRenderer가 점유한 ParcelFileDescriptor를 공유 못 함)
         val pdDocument = runCatching {
@@ -63,6 +93,74 @@ class PdfDocumentRenderer @Inject constructor(
         }.getOrNull()
 
         Handle(uri, pfd, renderer, pdDocument)
+    }
+
+    /**
+     * 비밀번호로 PDF를 연다. PdfBox로 복호화 → 평문 PDF를 cacheDir에 저장 → PdfRenderer로 오픈.
+     *
+     * 캐시 파일은 [close] 시 삭제된다.
+     */
+    override suspend fun open(uri: Uri, password: String): DocumentHandle = withContext(Dispatchers.IO) {
+        // PdfBox로 복호화 시도
+        val decryptedDoc = try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                PDDocument.load(input, password)
+            } ?: throw DocumentError.IoError()
+        } catch (ipe: InvalidPasswordException) {
+            Timber.i("PDF 비밀번호 불일치")
+            throw DocumentError.PasswordProtected(wrongPassword = true, cause = ipe)
+        } catch (de: DocumentError) {
+            throw de
+        } catch (t: Throwable) {
+            Timber.w(t, "PDF 복호화 실패")
+            throw DocumentError.Corrupted(t)
+        }
+
+        // 보안 정보 제거 후 캐시에 저장
+        val cacheFile = createUnlockedCacheFile()
+        try {
+            decryptedDoc.use { doc ->
+                doc.setAllSecurityToBeRemoved(true)
+                doc.save(cacheFile)
+            }
+        } catch (t: Throwable) {
+            runCatching { cacheFile.delete() }
+            Timber.w(t, "복호화된 PDF 저장 실패")
+            throw DocumentError.Corrupted(t)
+        }
+
+        // 캐시 파일을 PdfRenderer로 오픈
+        val pfd = try {
+            ParcelFileDescriptor.open(cacheFile, ParcelFileDescriptor.MODE_READ_ONLY)
+        } catch (t: Throwable) {
+            runCatching { cacheFile.delete() }
+            throw DocumentError.IoError(t)
+        }
+        val renderer = try {
+            PdfRenderer(pfd)
+        } catch (t: Throwable) {
+            runCatching { pfd.close() }
+            runCatching { cacheFile.delete() }
+            throw DocumentError.Corrupted(t)
+        }
+
+        // 텍스트 추출용 PDDocument도 캐시 파일에서 로드 (이미 평문)
+        val pdDocument = runCatching {
+            cacheFile.inputStream().use { PDDocument.load(it) }
+        }.onFailure {
+            Timber.w(it, "캐시 PDF 텍스트 추출 비활성")
+        }.getOrNull()
+
+        Handle(uri, pfd, renderer, pdDocument, unlockedCache = cacheFile)
+    }
+
+    private fun createUnlockedCacheFile(): File {
+        val dir = File(context.cacheDir, UNLOCK_CACHE_DIR).apply { mkdirs() }
+        // 같은 디렉터리의 오래된 잔여 캐시 정리 (이전 세션 비정상 종료 대비)
+        runCatching {
+            dir.listFiles()?.forEach { it.delete() }
+        }
+        return File.createTempFile("unlocked-", ".pdf", dir)
     }
 
     override suspend fun pageCount(handle: DocumentHandle): Int {
@@ -134,11 +232,13 @@ class PdfDocumentRenderer @Inject constructor(
                 runCatching { h.renderer.close() }
                 runCatching { h.pfd.close() }
                 runCatching { h.pdDocument?.close() }
+                h.unlockedCache?.let { runCatching { it.delete() } }
             }
         }
     }
 
     private companion object {
         const val MAX_DIMENSION = 4096
+        const val UNLOCK_CACHE_DIR = "pdf-unlocked"
     }
 }
