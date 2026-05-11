@@ -100,10 +100,14 @@ jobs:
             ls distro-configs/ | grep -i android || true
             exit 1
           fi
-          # NDK는 distro-configs 파일이 가리키는 ANDROID_NDK_ROOT 환경변수로 받음
+          # LO 7-6의 distro-configs는 NDK 경로를 명시 안 함 → 인자로 직접 전달
           export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
-          ./autogen.sh --with-distro="$DISTRO" --with-android-api-level=28
+          ./autogen.sh \
+            --with-distro="$DISTRO" \
+            --with-android-ndk="$ANDROID_NDK_HOME" \
+            --with-android-sdk="$ANDROID_HOME" \
+            --with-android-api-level=28
 
       - name: Build LibreOffice (실제 빌드 — 수 시간)
         working-directory: lo-core
