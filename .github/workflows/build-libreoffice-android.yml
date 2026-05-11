@@ -32,8 +32,23 @@ jobs:
 
       - name: Free disk space (LO build needs ~40GB)
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk
+          # GitHub-hosted ubuntu-22.04 runner는 ~14GB만 가용. 공격적 정리 시도.
+          echo "== Before =="
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/share/chromium
+          sudo rm -rf /opt/microsoft
+          sudo rm -rf /opt/google
+          sudo rm -rf /home/linuxbrew
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo apt-get remove -y --purge ghc* podman* docker-* google-chrome-* firefox-* || true
+          sudo apt-get autoremove -y
           sudo apt-get clean
+          echo "== After =="
           df -h
 
       - name: Install build dependencies
@@ -64,22 +79,25 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
         run: |
-          # ABI → host 매핑
+          # LO는 distro-configs/ 에 ABI별 설정 파일을 둠.
+          # --with-distro=X 는 distro-configs/X.conf 를 읽음.
           case "${{ matrix.abi }}" in
-            arm64-v8a)   HOST=aarch64-linux-android ;;
-            armeabi-v7a) HOST=arm-linux-androideabi ;;
-            x86_64)      HOST=x86_64-linux-android ;;
-            x86)         HOST=i686-linux-android ;;
+            arm64-v8a)   DISTRO=LibreOfficeAndroidAarch64 ;;
+            armeabi-v7a) DISTRO=LibreOfficeAndroidArm ;;
+            x86_64)      DISTRO=LibreOfficeAndroidX86_64 ;;
+            x86)         DISTRO=LibreOfficeAndroidX86 ;;
             *) echo "지원하지 않는 ABI: ${{ matrix.abi }}" && exit 1 ;;
           esac
-          ./autogen.sh \
-            --with-distro=LibreOfficeAndroid \
-            --with-android-ndk="$ANDROID_NDK_HOME" \
-            --with-android-sdk="$ANDROID_HOME" \
-            --with-android-api-level=28 \
-            --host="$HOST" \
-            --disable-debug --disable-dbgutil \
-            --enable-release-build
+          # distro 설정 파일이 실제로 있는지 확인 — 없으면 LO 버전과 안 맞는 것
+          if [ ! -f "distro-configs/${DISTRO}.conf" ]; then
+            echo "::error::distro-configs/${DISTRO}.conf 없음 — LO ${{ inputs.lo_branch }} 와 호환되는 distro 이름 확인 필요"
+            ls distro-configs/ | grep -i android || true
+            exit 1
+          fi
+          # NDK는 distro-configs 파일이 가리키는 ANDROID_NDK_ROOT 환경변수로 받음
+          export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          ./autogen.sh --with-distro="$DISTRO" --with-android-api-level=28
 
       - name: Build LibreOffice (실제 빌드 — 수 시간)
         working-directory: lo-core
