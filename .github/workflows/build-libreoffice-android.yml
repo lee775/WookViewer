@@ -87,10 +87,11 @@ jobs:
 
       - name: Clone LibreOffice core
         run: |
+          # 우리 repo 안에 clone하면 LO Gradle이 우리 settings.gradle.kts를 잘못 잡음.
+          # $HOME 하위로 별도 clone — Gradle 디렉토리 상향 검색에서 충돌 회피.
           git clone --depth 1 --branch ${{ inputs.lo_branch }} \
-            https://git.libreoffice.org/core lo-core
-          cd lo-core
-          echo "LO_SRC=$(pwd)" >> $GITHUB_ENV
+            https://git.libreoffice.org/core "$HOME/lo-core"
+          echo "LO_SRC=$HOME/lo-core" >> $GITHUB_ENV
 
       # ccache 캐시 — 컴파일 결과물 재사용. 같은 source가 반복 빌드되면 즉시 hit.
       # 빌드 실패 후 재시도 시 이전 성공 파일들은 ccache에서 즉시 가져옴 → 사실상 resume.
@@ -111,7 +112,7 @@ jobs:
           ccache -s
 
       - name: Configure LibreOffice for Android (${{ matrix.abi }})
-        working-directory: lo-core
+        working-directory: ${{ env.LO_SRC }}
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.3.13750724
         run: |
@@ -142,7 +143,7 @@ jobs:
             --enable-ccache
 
       - name: Build LibreOffice (실제 빌드 — 수 시간)
-        working-directory: lo-core
+        working-directory: ${{ env.LO_SRC }}
         timeout-minutes: 330  # 5.5h, runner 6h 한도 보호
         run: |
           # Android 빌드는 distro-configs 가 지정한 cross-target 으로
@@ -153,7 +154,7 @@ jobs:
           ccache -s  # 캐시 통계 출력
 
       - name: Locate output .so
-        working-directory: lo-core
+        working-directory: ${{ env.LO_SRC }}
         run: |
           find . -name "liblo-native-code.so" -type f 2>/dev/null | head -5
           # 일반적으로 instdir/android/source/build/intermediates/... 에 위치
@@ -162,9 +163,9 @@ jobs:
             echo "::error::liblo-native-code.so 를 못 찾음"
             exit 1
           fi
-          mkdir -p ../jniLibs/${{ matrix.abi }}
-          cp "$ARTIFACT" ../jniLibs/${{ matrix.abi }}/
-          ls -lah ../jniLibs/${{ matrix.abi }}/
+          mkdir -p "$GITHUB_WORKSPACE/jniLibs/${{ matrix.abi }}"
+          cp "$ARTIFACT" "$GITHUB_WORKSPACE/jniLibs/${{ matrix.abi }}/"
+          ls -lah "$GITHUB_WORKSPACE/jniLibs/${{ matrix.abi }}/"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
