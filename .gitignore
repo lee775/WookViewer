@@ -17,3 +17,6 @@ local.properties
 
 # Test samples (regenerable via scripts/generate_test_samples.py)
 /test-samples/
+
+# LibreOffice native libs — 별도 워크플로 산출물 (~100MB), git에 포함 안 함
+/app/src/main/jniLibs/

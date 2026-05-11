@@ -33,9 +33,11 @@ class AppSettingsRepositoryImpl @Inject constructor(
     private fun loadFromPrefs(): AppSettings {
         val themeOrdinal = prefs.getInt(KEY_THEME_MODE, ThemeMode.SYSTEM.ordinal)
         val scaleOrdinal = prefs.getInt(KEY_TEXT_SCALE, TextScale.MEDIUM.ordinal)
+        val useLok = prefs.getBoolean(KEY_USE_LOK, false)
         return AppSettings(
             themeMode = ThemeMode.entries.getOrElse(themeOrdinal) { ThemeMode.SYSTEM },
-            textScale = TextScale.entries.getOrElse(scaleOrdinal) { TextScale.MEDIUM }
+            textScale = TextScale.entries.getOrElse(scaleOrdinal) { TextScale.MEDIUM },
+            useLibreOfficeForOffice = useLok
         )
     }
 
@@ -49,9 +51,15 @@ class AppSettingsRepositoryImpl @Inject constructor(
         _settings.value = _settings.value.copy(textScale = scale)
     }
 
+    override fun setUseLibreOffice(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_USE_LOK, enabled).apply()
+        _settings.value = _settings.value.copy(useLibreOfficeForOffice = enabled)
+    }
+
     private companion object {
         const val PREFS_NAME = "wook_settings"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_TEXT_SCALE = "text_scale"
+        const val KEY_USE_LOK = "use_libreoffice"
     }
 }

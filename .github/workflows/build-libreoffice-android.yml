@@ -1,0 +1,112 @@
+name: Build LibreOffice for Android
+
+# 수동 트리거만 — LibreOffice core 빌드는 4-8시간 소요.
+# 결과 산출물(.so 파일들)은 워크플로 artifact로 업로드되며,
+# 그 후 GitHub Release에 첨부하거나 app/src/main/jniLibs/ 에 넣어 커밋한다.
+on:
+  workflow_dispatch:
+    inputs:
+      abis:
+        description: '빌드 대상 ABI (콤마구분, 예: arm64-v8a,armeabi-v7a)'
+        default: 'arm64-v8a'
+        required: true
+      lo_branch:
+        description: 'LibreOffice core git 브랜치/태그'
+        default: 'libreoffice-7-6'
+        required: true
+
+# 단일 잡 — 한 ABI당 4시간+, GitHub-hosted runner의 6시간 한도 안에서 단일 ABI만 권장.
+# 여러 ABI 필요하면 matrix 로 분리 (각각 별도 잡, 동시 실행).
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360  # 6시간 한도
+
+    strategy:
+      matrix:
+        abi: [arm64-v8a]  # 입력 ABIs 를 동적으로 펼치려면 set-matrix 단계 필요
+
+    steps:
+      - name: Checkout this repo (for build configs)
+        uses: actions/checkout@v4
+
+      - name: Free disk space (LO build needs ~40GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk
+          sudo apt-get clean
+          df -h
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf libtool flex bison \
+            python3 python3-dev \
+            openjdk-17-jdk-headless \
+            zip unzip git wget curl \
+            gperf nasm pkg-config \
+            libssl-dev libcrypt-dev
+
+      - name: Setup Android SDK + NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-28 build-tools;28.0.3 ndk;25.2.9519653'
+
+      - name: Clone LibreOffice core
+        run: |
+          git clone --depth 1 --branch ${{ inputs.lo_branch }} \
+            https://git.libreoffice.org/core lo-core
+          cd lo-core
+          echo "LO_SRC=$(pwd)" >> $GITHUB_ENV
+
+      - name: Configure LibreOffice for Android (${{ matrix.abi }})
+        working-directory: lo-core
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
+        run: |
+          # ABI → host 매핑
+          case "${{ matrix.abi }}" in
+            arm64-v8a)   HOST=aarch64-linux-android ;;
+            armeabi-v7a) HOST=arm-linux-androideabi ;;
+            x86_64)      HOST=x86_64-linux-android ;;
+            x86)         HOST=i686-linux-android ;;
+            *) echo "지원하지 않는 ABI: ${{ matrix.abi }}" && exit 1 ;;
+          esac
+          ./autogen.sh \
+            --with-distro=LibreOfficeAndroid \
+            --with-android-ndk="$ANDROID_NDK_HOME" \
+            --with-android-sdk="$ANDROID_HOME" \
+            --with-android-api-level=28 \
+            --host="$HOST" \
+            --disable-debug --disable-dbgutil \
+            --enable-release-build
+
+      - name: Build LibreOffice (실제 빌드 — 수 시간)
+        working-directory: lo-core
+        run: |
+          # 단일 .so 파일 빌드 (android/source 모듈)
+          make android-source -j$(nproc) || make android-source
+
+      - name: Locate output .so
+        working-directory: lo-core
+        run: |
+          find . -name "liblo-native-code.so" -type f 2>/dev/null | head -5
+          # 일반적으로 instdir/android/source/build/intermediates/... 에 위치
+          ARTIFACT=$(find . -name "liblo-native-code.so" -type f | head -1)
+          if [ -z "$ARTIFACT" ]; then
+            echo "::error::liblo-native-code.so 를 못 찾음"
+            exit 1
+          fi
+          mkdir -p ../jniLibs/${{ matrix.abi }}
+          cp "$ARTIFACT" ../jniLibs/${{ matrix.abi }}/
+          ls -lah ../jniLibs/${{ matrix.abi }}/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libreoffice-android-${{ matrix.abi }}-${{ inputs.lo_branch }}
+          path: jniLibs/${{ matrix.abi }}/
+          retention-days: 30
+
+      # NOTE: 자동으로 main에 커밋하지 않음 — 산출물이 ~100MB라 git에 부담.
+      # 다운로드해서 별도 git-lfs 또는 GitHub Release에 첨부 권장.

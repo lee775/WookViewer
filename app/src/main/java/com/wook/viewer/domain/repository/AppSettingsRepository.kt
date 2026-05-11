@@ -9,4 +9,5 @@ interface AppSettingsRepository {
     val settings: StateFlow<AppSettings>
     fun setThemeMode(mode: ThemeMode)
     fun setTextScale(scale: TextScale)
+    fun setUseLibreOffice(enabled: Boolean)
 }
