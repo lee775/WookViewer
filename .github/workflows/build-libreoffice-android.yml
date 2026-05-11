@@ -121,9 +121,12 @@ jobs:
 
       - name: Build LibreOffice (실제 빌드 — 수 시간)
         working-directory: lo-core
+        timeout-minutes: 330  # 5.5h, runner 6h 한도 보호
         run: |
-          # 단일 .so 파일 빌드 (android/source 모듈)
-          make android-source -j$(nproc) || make android-source
+          # Android 빌드는 distro-configs 가 지정한 cross-target 으로
+          # 기본 make 가 lo-native-code.so 생성까지 처리.
+          # 병렬 빌드 — 메모리 압박 시 -j$(nproc/2) 로 낮춰야 할 수도.
+          make -j$(nproc)
 
       - name: Locate output .so
         working-directory: lo-core
