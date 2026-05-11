@@ -44,6 +44,10 @@
     <string name="action_outline">목차</string>
     <string name="outline_sheet_title">목차</string>
 
+    <!-- 썸네일 그리드 -->
+    <string name="action_thumbnails">페이지 그리드</string>
+    <string name="action_thumbnails_close">그리드 닫기</string>
+
     <!-- 공유 -->
     <string name="action_share">공유</string>
     <string name="share_chooser_title">공유</string>

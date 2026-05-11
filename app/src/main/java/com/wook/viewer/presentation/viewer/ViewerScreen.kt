@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -79,6 +81,7 @@ import com.wook.viewer.presentation.viewer.components.SearchBar
 import com.wook.viewer.presentation.viewer.components.ShareSheet
 import com.wook.viewer.presentation.viewer.components.SheetTabs
 import com.wook.viewer.presentation.viewer.components.TextPageInline
+import com.wook.viewer.presentation.viewer.components.ThumbnailGrid
 import com.wook.viewer.presentation.viewer.components.shareOriginalDocument
 import com.wook.viewer.presentation.viewer.components.sharePlainText
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -99,6 +102,7 @@ fun ViewerScreen(
     var showBookmarksSheet by rememberSaveable { mutableStateOf(false) }
     var showShareSheet by rememberSaveable { mutableStateOf(false) }
     var showOutlineSheet by rememberSaveable { mutableStateOf(false) }
+    var showThumbnails by rememberSaveable { mutableStateOf(false) }
     // 비밀번호 다이얼로그 — 사용자가 취소를 눌러서 닫았는지 추적해 다시 열리는 걸 막음
     var passwordDialogDismissed by rememberSaveable(state.document?.uri?.toString() ?: "") {
         mutableStateOf(false)
@@ -145,6 +149,8 @@ fun ViewerScreen(
                 searchSupported = vm.isSearchSupported,
                 shareSupported = state.document != null && state.error == null,
                 hasOutline = !state.outline.isNullOrEmpty(),
+                showThumbnailsToggle = state.pageCount > 1 && state.error == null,
+                thumbnailsActive = showThumbnails,
                 bookmarked = state.currentPageBookmarked,
                 bookmarkCount = state.bookmarks.size,
                 showPdfModeToggle = format == DocumentFormat.PDF,
@@ -157,6 +163,7 @@ fun ViewerScreen(
                 onSearch = { vm.setSearchActive(true) },
                 onShare = { showShareSheet = true },
                 onShowOutline = { showOutlineSheet = true },
+                onToggleThumbnails = { showThumbnails = !showThumbnails },
                 onToggleBookmark = vm::toggleCurrentBookmark,
                 onShowBookmarks = { showBookmarksSheet = true },
                 onTogglePdfMode = vm::togglePdfViewMode
@@ -190,6 +197,16 @@ fun ViewerScreen(
             when {
                 state.loading -> LoadingView(state.document?.format, isDarkBitmap)
                 state.error != null -> ErrorView(state.error!!, state.document, isDarkBitmap)
+                state.pageCount > 0 && showThumbnails -> ThumbnailGrid(
+                    pageCount = state.pageCount,
+                    currentIndex = state.currentIndex,
+                    loadBitmap = { idx, widthPx -> vm.renderBitmap(idx, widthPx) },
+                    onSelect = { idx ->
+                        vm.jumpToPage(idx)
+                        showThumbnails = false
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
                 state.pageCount > 0 -> PageContent(
                     pageCount = state.pageCount,
                     currentIndex = state.currentIndex,
@@ -301,6 +318,8 @@ private fun ViewerTopBar(
     searchSupported: Boolean,
     shareSupported: Boolean,
     hasOutline: Boolean,
+    showThumbnailsToggle: Boolean,
+    thumbnailsActive: Boolean,
     bookmarked: Boolean,
     bookmarkCount: Int,
     showPdfModeToggle: Boolean,
@@ -313,6 +332,7 @@ private fun ViewerTopBar(
     onSearch: () -> Unit,
     onShare: () -> Unit,
     onShowOutline: () -> Unit,
+    onToggleThumbnails: () -> Unit,
     onToggleBookmark: () -> Unit,
     onShowBookmarks: () -> Unit,
     onTogglePdfMode: () -> Unit
@@ -371,6 +391,19 @@ private fun ViewerTopBar(
                     Icons.AutoMirrored.Filled.List,
                     contentDescription = stringResource(R.string.action_outline),
                     tint = textColor
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+        }
+        if (showThumbnailsToggle) {
+            TopBarIconButton(iconBg = iconBg, onClick = onToggleThumbnails) {
+                Icon(
+                    imageVector = if (thumbnailsActive) Icons.Filled.Close else Icons.Filled.GridView,
+                    contentDescription = stringResource(
+                        if (thumbnailsActive) R.string.action_thumbnails_close
+                        else R.string.action_thumbnails
+                    ),
+                    tint = if (thumbnailsActive) MaterialTheme.colorScheme.primary else textColor
                 )
             }
             Spacer(Modifier.width(4.dp))
