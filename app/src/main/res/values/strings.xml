@@ -79,7 +79,7 @@
     <!-- 비밀번호 다이얼로그 -->
     <string name="password_dialog_title">비밀번호 입력</string>
     <string name="password_dialog_message">이 문서는 암호로 보호되어 있습니다. 비밀번호를 입력하세요.</string>
-    <string name="password_dialog_unsupported">이 형식의 암호 해제는 아직 지원하지 않습니다. (현재 PDF만 지원)</string>
+    <string name="password_dialog_unsupported">이 형식의 암호 해제는 아직 지원하지 않습니다.</string>
     <string name="password_dialog_field_label">비밀번호</string>
     <string name="password_dialog_wrong">비밀번호가 올바르지 않습니다.</string>
     <string name="password_dialog_submit">잠금 해제</string>

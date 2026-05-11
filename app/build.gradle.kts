@@ -14,8 +14,8 @@ android {
         applicationId = "com.wook.viewer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26
-        versionName = "0.7.4"
+        versionCode = 27
+        versionName = "0.7.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -65,6 +65,12 @@ android {
             excludes += "/META-INF/notice.txt"
             excludes += "/META-INF/ASL2.0"
             excludes += "/META-INF/*.kotlin_module"
+            // POI 3.17의 추가 META-INF 충돌
+            excludes += "/META-INF/maven/**"
+            excludes += "/META-INF/services/javax.xml.parsers.*"
+            excludes += "/META-INF/services/javax.xml.stream.*"
+            excludes += "/META-INF/services/javax.xml.transform.*"
+            excludes += "/META-INF/services/org.xml.sax.*"
         }
     }
 }
@@ -107,6 +113,11 @@ dependencies {
     // PDF 텍스트 추출 (Android PdfRenderer는 비트맵만 제공 — 텍스트 검색/복사 불가)
     // PdfBox-Android: Apache 2.0, ~10MB 추가
     implementation(libs.pdfbox.android)
+
+    // OOXML 암호 해제 (DOCX/PPTX/XLSX의 Agile/Standard encryption)
+    // POI 3.17 — Apache 2.0, hwplib(POI 3.9)와 POIFS API 호환.
+    // xmlbeans 트랜지티브 ~3MB 포함, 전체 추가 ~10-15MB APK 사이즈.
+    implementation(libs.poi.ooxml)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

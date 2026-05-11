@@ -28,6 +28,10 @@ hwpxlib = "1.0.8"
 # PDF text extraction
 pdfboxAndroid = "2.0.27.0"
 
+# OOXML 암호 해제 (Office Open XML encrypted documents)
+# 3.17 — 마지막 안정 3.x. hwplib(3.9)과 POIFS API 호환.
+poi = "3.17"
+
 junit = "4.13.2"
 androidxJunit = "1.2.1"
 espresso = "3.6.1"
@@ -68,6 +72,9 @@ hwplib = { module = "kr.dogfoot:hwplib", version.ref = "hwplib" }
 hwpxlib = { module = "kr.dogfoot:hwpxlib", version.ref = "hwpxlib" }
 
 pdfbox-android = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfboxAndroid" }
+
+# POI OOXML — for password-encrypted DOCX/PPTX/XLSX decryption
+poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "poi" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 androidx-junit = { module = "androidx.test.ext:junit", version.ref = "androidxJunit" }

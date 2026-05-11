@@ -10,12 +10,14 @@ import com.wook.viewer.domain.model.PageSize
 import com.wook.viewer.domain.model.RenderedPage
 import com.wook.viewer.domain.repository.DocumentHandle
 import com.wook.viewer.domain.repository.DocumentRenderer
+import com.wook.viewer.render.ooxml.OoxmlOpenHelper
 import com.wook.viewer.render.text.TextPage
 import com.wook.viewer.render.text.TextPageRenderer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,33 +38,49 @@ class PptxDocumentRenderer @Inject constructor(
 
     private class Handle(
         override val uri: Uri,
-        val slides: List<PptxTextExtractor.SlideContent>
+        val slides: List<PptxTextExtractor.SlideContent>,
+        val unlockedCache: File? = null
     ) : DocumentHandle
 
-    override suspend fun open(uri: Uri): DocumentHandle = withContext(Dispatchers.IO) {
-        val name = uri.lastPathSegment ?: ""
-        if (name.endsWith(".ppt", ignoreCase = true) &&
-            !name.endsWith(".pptx", ignoreCase = true)
-        ) {
-            throw DocumentError.UnsupportedVariant("ppt (구형 바이너리)")
-        }
+    override suspend fun open(uri: Uri): DocumentHandle = openInternal(uri, password = null)
 
-        val slides = try {
-            context.contentResolver.openInputStream(uri).use { input ->
-                requireNotNull(input) { "openInputStream returned null for $uri" }
-                PptxTextExtractor.extract(input)
+    override suspend fun open(uri: Uri, password: String): DocumentHandle =
+        openInternal(uri, password)
+
+    private suspend fun openInternal(uri: Uri, password: String?): DocumentHandle =
+        withContext(Dispatchers.IO) {
+            val name = uri.lastPathSegment ?: ""
+            if (name.endsWith(".ppt", ignoreCase = true) &&
+                !name.endsWith(".pptx", ignoreCase = true)
+            ) {
+                throw DocumentError.UnsupportedVariant("ppt (구형 바이너리)")
             }
-        } catch (e: PptxFormatException) {
-            Timber.w(e, "PPTX 형식 아님")
-            throw DocumentError.UnsupportedVariant("ppt (구형 바이너리)", e)
-        } catch (t: Throwable) {
-            Timber.e(t, "PPTX 텍스트 추출 실패")
-            throw classifyPptxError(t)
-        }
 
-        Timber.d("PPTX 열기: slides=${slides.size}, totalShapes=${slides.sumOf { it.shapes.size }}")
-        Handle(uri, slides)
-    }
+            var cachedFile: File? = null
+            val slides = try {
+                context.contentResolver.openInputStream(uri).use { input ->
+                    requireNotNull(input) { "openInputStream returned null for $uri" }
+                    OoxmlOpenHelper.openOrThrow(
+                        context = context,
+                        input = input,
+                        password = password,
+                        extract = { PptxTextExtractor.extract(it) },
+                        onCachedFile = { cachedFile = it }
+                    )
+                }
+            } catch (e: DocumentError) {
+                throw e
+            } catch (e: PptxFormatException) {
+                Timber.w(e, "PPTX 형식 아님")
+                throw DocumentError.UnsupportedVariant("ppt (구형 바이너리)", e)
+            } catch (t: Throwable) {
+                Timber.e(t, "PPTX 텍스트 추출 실패")
+                throw classifyPptxError(t)
+            }
+
+            Timber.d("PPTX 열기: slides=${slides.size}, totalShapes=${slides.sumOf { it.shapes.size }}")
+            Handle(uri, slides, cachedFile)
+        }
 
     override suspend fun pageCount(handle: DocumentHandle): Int =
         (handle as Handle).slides.size
@@ -110,6 +128,7 @@ class PptxDocumentRenderer @Inject constructor(
     override suspend fun close(handle: DocumentHandle) {
         val h = handle as Handle
         h.slides.flatMap { it.images }.forEach { runCatching { it.recycle() } }
+        h.unlockedCache?.let { runCatching { it.delete() } }
     }
 
     private fun classifyPptxError(t: Throwable): DocumentError {

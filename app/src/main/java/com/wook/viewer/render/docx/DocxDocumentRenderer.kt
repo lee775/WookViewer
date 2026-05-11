@@ -10,8 +10,10 @@ import com.wook.viewer.domain.model.PageSize
 import com.wook.viewer.domain.model.RenderedPage
 import com.wook.viewer.domain.repository.DocumentHandle
 import com.wook.viewer.domain.repository.DocumentRenderer
+import com.wook.viewer.render.ooxml.OoxmlOpenHelper
 import com.wook.viewer.render.text.TextPage
 import com.wook.viewer.render.text.TextPageRenderer
+import java.io.File
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,37 +40,54 @@ class DocxDocumentRenderer @Inject constructor(
     private class Handle(
         override val uri: Uri,
         val pages: List<List<PageElement>>,
-        val plainPages: List<TextPage>
+        val plainPages: List<TextPage>,
+        /** 암호 해제로 만든 캐시 파일. close 시 삭제. */
+        val unlockedCache: File? = null
     ) : DocumentHandle
 
-    override suspend fun open(uri: Uri): DocumentHandle = withContext(Dispatchers.IO) {
-        val name = uri.lastPathSegment ?: ""
-        if (name.endsWith(".doc", ignoreCase = true) &&
-            !name.endsWith(".docx", ignoreCase = true)
-        ) {
-            throw DocumentError.UnsupportedVariant("doc (구형 바이너리)")
-        }
+    override suspend fun open(uri: Uri): DocumentHandle = openInternal(uri, password = null)
 
-        val content = try {
-            context.contentResolver.openInputStream(uri).use { input ->
-                requireNotNull(input) { "openInputStream returned null for $uri" }
-                DocxTextExtractor.extract(input)
+    override suspend fun open(uri: Uri, password: String): DocumentHandle =
+        openInternal(uri, password)
+
+    private suspend fun openInternal(uri: Uri, password: String?): DocumentHandle =
+        withContext(Dispatchers.IO) {
+            val name = uri.lastPathSegment ?: ""
+            if (name.endsWith(".doc", ignoreCase = true) &&
+                !name.endsWith(".docx", ignoreCase = true)
+            ) {
+                throw DocumentError.UnsupportedVariant("doc (구형 바이너리)")
             }
-        } catch (e: DocxFormatException) {
-            Timber.w(e, "DOCX 형식 아님")
-            throw DocumentError.UnsupportedVariant("doc (구형 바이너리)", e)
-        } catch (t: Throwable) {
-            Timber.e(t, "DOCX 텍스트 추출 실패")
-            throw classifyDocxError(t)
-        }
 
-        val pages = paginateSegments(content.elements)
-        val plainPages = pages.map { elems ->
-            TextPage(elems.filterIsInstance<PageElement.TextElement>().joinToString("") { it.text })
+            var cachedFile: File? = null
+            val content = try {
+                context.contentResolver.openInputStream(uri).use { input ->
+                    requireNotNull(input) { "openInputStream returned null for $uri" }
+                    OoxmlOpenHelper.openOrThrow(
+                        context = context,
+                        input = input,
+                        password = password,
+                        extract = { DocxTextExtractor.extract(it) },
+                        onCachedFile = { cachedFile = it }
+                    )
+                }
+            } catch (e: DocumentError) {
+                throw e
+            } catch (e: DocxFormatException) {
+                Timber.w(e, "DOCX 형식 아님")
+                throw DocumentError.UnsupportedVariant("doc (구형 바이너리)", e)
+            } catch (t: Throwable) {
+                Timber.e(t, "DOCX 텍스트 추출 실패")
+                throw classifyDocxError(t)
+            }
+
+            val pages = paginateSegments(content.elements)
+            val plainPages = pages.map { elems ->
+                TextPage(elems.filterIsInstance<PageElement.TextElement>().joinToString("") { it.text })
+            }
+            Timber.d("DOCX 열기 완료: pages=${pages.size}, totalImages=${content.images.size}")
+            Handle(uri, pages, plainPages, cachedFile)
         }
-        Timber.d("DOCX 열기 완료: pages=${pages.size}, totalImages=${content.images.size}")
-        Handle(uri, pages, plainPages)
-    }
 
     override suspend fun pageCount(handle: DocumentHandle): Int =
         (handle as Handle).pages.size
@@ -114,6 +133,7 @@ class DocxDocumentRenderer @Inject constructor(
         h.pages.flatten()
             .filterIsInstance<PageElement.ImageElement>()
             .forEach { runCatching { it.bitmap.recycle() } }
+        h.unlockedCache?.let { runCatching { it.delete() } }
     }
 
     /** segment 단위로 페이지 분할 — 텍스트 길이 누적 기준, 이미지는 "공짜". */

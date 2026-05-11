@@ -87,6 +87,14 @@ import com.wook.viewer.presentation.viewer.components.sharePlainText
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
+/** 비밀번호 잠금 해제가 구현된 포맷. PDF는 PdfBox, OOXML 셋은 Apache POI. */
+private val PASSWORD_UNLOCK_SUPPORTED = setOf(
+    DocumentFormat.PDF,
+    DocumentFormat.DOCX,
+    DocumentFormat.PPTX,
+    DocumentFormat.XLSX
+)
+
 @Composable
 fun ViewerScreen(
     uri: Uri?,
@@ -249,7 +257,7 @@ fun ViewerScreen(
     if (pwError != null && !passwordDialogDismissed) {
         PasswordPromptDialog(
             wrongPasswordAttempt = pwError.wrongPassword,
-            canUnlock = format == DocumentFormat.PDF,
+            canUnlock = format in PASSWORD_UNLOCK_SUPPORTED,
             onSubmit = { vm.unlockWithPassword(it) },
             onDismiss = { passwordDialogDismissed = true }
         )
