@@ -58,7 +58,11 @@ fun TextPageInline(
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
     ) {
+        // 단일 PositionedLayout (PPTX 슬라이드) — 절대 좌표 렌더
+        val positioned = elements?.firstOrNull() as? PageElement.PositionedLayout
         when {
+            positioned != null && elements.size == 1 ->
+                PositionedSlideView(layout = positioned)
             !elements.isNullOrEmpty() -> InlineElements(
                 elements = elements,
                 matches = matches,
