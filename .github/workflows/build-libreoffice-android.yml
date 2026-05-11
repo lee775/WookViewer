@@ -30,6 +30,12 @@ jobs:
       - name: Checkout this repo (for build configs)
         uses: actions/checkout@v4
 
+      - name: Setup JDK 17 (sdkmanager 요구사항)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Setup Android SDK + NDK
         uses: android-actions/setup-android@v3
         with:
