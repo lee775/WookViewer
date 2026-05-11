@@ -87,12 +87,18 @@ import com.wook.viewer.presentation.viewer.components.sharePlainText
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
-/** 비밀번호 잠금 해제가 구현된 포맷. PDF는 PdfBox, OOXML 셋은 Apache POI. */
+/**
+ * 비밀번호 잠금 해제가 구현된 포맷.
+ *  - PDF: PdfBox
+ *  - DOCX/PPTX/XLSX: Apache POI
+ *  - HWP: HWPX 변형만 지원 (hwpxlib_ext). HWP 5.0은 시도 시 UnsupportedVariant 에러.
+ */
 private val PASSWORD_UNLOCK_SUPPORTED = setOf(
     DocumentFormat.PDF,
     DocumentFormat.DOCX,
     DocumentFormat.PPTX,
-    DocumentFormat.XLSX
+    DocumentFormat.XLSX,
+    DocumentFormat.HWP
 )
 
 @Composable

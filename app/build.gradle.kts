@@ -14,8 +14,8 @@ android {
         applicationId = "com.wook.viewer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.7.5"
+        versionCode = 28
+        versionName = "0.7.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -109,6 +109,12 @@ dependencies {
     //       프로덕션에서는 Dynamic Feature Module로 분리 검토
     implementation(libs.hwplib)
     implementation(libs.hwpxlib)
+    // hwpxlib_ext: 암호화된 HWPX 복호화. JitPack 빌드.
+    // 트랜지티브로 hwpxlib 1.0.3을 가져오는데 우리는 1.0.8 사용 — 충돌 방지 위해 exclude.
+    implementation(libs.hwpxlib.ext) {
+        exclude(group = "kr.dogfoot", module = "hwpxlib")
+        exclude(group = "junit", module = "junit")
+    }
 
     // PDF 텍스트 추출 (Android PdfRenderer는 비트맵만 제공 — 텍스트 검색/복사 불가)
     // PdfBox-Android: Apache 2.0, ~10MB 추가

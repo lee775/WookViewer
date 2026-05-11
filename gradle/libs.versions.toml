@@ -25,6 +25,10 @@ timber = "5.0.1"
 hwplib = "1.1.9"
 hwpxlib = "1.0.8"
 
+# hwpxlib_ext — 암호화된 HWPX 읽기 확장.
+# Maven Central 미배포 → JitPack으로 main 브랜치 특정 커밋 빌드.
+hwpxlibExt = "860a710b1e"
+
 # PDF text extraction
 pdfboxAndroid = "2.0.27.0"
 
@@ -71,6 +75,7 @@ timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
 
 hwplib = { module = "kr.dogfoot:hwplib", version.ref = "hwplib" }
 hwpxlib = { module = "kr.dogfoot:hwpxlib", version.ref = "hwpxlib" }
+hwpxlib-ext = { module = "com.github.neolord0:hwpxlib_ext", version.ref = "hwpxlibExt" }
 
 pdfbox-android = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfboxAndroid" }
 

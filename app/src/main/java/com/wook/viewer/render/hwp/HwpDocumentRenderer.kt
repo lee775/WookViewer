@@ -49,37 +49,62 @@ class HwpDocumentRenderer @Inject constructor(
 
     private enum class HwpVariant { HWP_5, HWPX }
 
-    override suspend fun open(uri: Uri): DocumentHandle = withContext(Dispatchers.IO) {
-        val temp = try {
-            copyToCache(uri)
-        } catch (t: Throwable) {
-            Timber.e(t, "HWP 캐시 복사 실패")
-            throw DocumentError.IoError(t)
+    override suspend fun open(uri: Uri): DocumentHandle = openInternal(uri, password = null)
+
+    override suspend fun open(uri: Uri, password: String): DocumentHandle =
+        openInternal(uri, password)
+
+    private suspend fun openInternal(uri: Uri, password: String?): DocumentHandle =
+        withContext(Dispatchers.IO) {
+            val temp = try {
+                copyToCache(uri)
+            } catch (t: Throwable) {
+                Timber.e(t, "HWP 캐시 복사 실패")
+                throw DocumentError.IoError(t)
+            }
+
+            val variant = detectVariant(uri, temp)
+
+            // 암호화 감지 (현재 HWPX만 지원)
+            if (variant == HwpVariant.HWPX && HwpxEncryptionDetector.isEncrypted(temp)) {
+                if (password.isNullOrEmpty()) {
+                    temp.delete()
+                    throw DocumentError.PasswordProtected(wrongPassword = false)
+                }
+                // 비밀번호 시도는 extractText에서 hwpxlib_ext로 처리
+            } else if (variant == HwpVariant.HWP_5 && password != null) {
+                // HWP 5.0 암호 해제는 미구현 — 명시적으로 안내
+                temp.delete()
+                throw DocumentError.UnsupportedVariant(
+                    variant = "HWP 5.0 암호 (HWPX만 지원)"
+                )
+            }
+
+            val text = try {
+                extractText(temp, variant, password)
+            } catch (e: DocumentError) {
+                temp.delete()
+                throw e
+            } catch (t: Throwable) {
+                Timber.e(t, "HWP 텍스트 추출 실패")
+                temp.delete()
+                throw classifyHwpError(t)
+            }
+            val pages = TextPaginator.paginate(text)
+            val images = runCatching { extractImages(temp, variant) }
+                .onFailure { Timber.w(it, "HWP 이미지 추출 실패 — 텍스트만 표시") }
+                .getOrDefault(emptyList())
+
+            // HWP 5.0: hwplib 단락 워킹으로 인라인 위치 보존된 elements 생성
+            val pagedElements = if (variant == HwpVariant.HWP_5) {
+                runCatching { extractParagraphElements(temp, pages) }
+                    .onFailure { Timber.w(it, "HWP 단락 워킹 실패 — 플랫 폴백") }
+                    .getOrNull()
+            } else null
+
+            Timber.d("HWP 열기: variant=$variant, pages=${pages.size}, chars=${text.length}, images=${images.size}, paged=${pagedElements != null}")
+            Handle(uri, temp, pages, variant, images, pagedElements)
         }
-
-        val variant = detectVariant(uri, temp)
-        val text = try {
-            extractText(temp, variant)
-        } catch (t: Throwable) {
-            Timber.e(t, "HWP 텍스트 추출 실패")
-            temp.delete()
-            throw classifyHwpError(t)
-        }
-        val pages = TextPaginator.paginate(text)
-        val images = runCatching { extractImages(temp, variant) }
-            .onFailure { Timber.w(it, "HWP 이미지 추출 실패 — 텍스트만 표시") }
-            .getOrDefault(emptyList())
-
-        // HWP 5.0: hwplib 단락 워킹으로 인라인 위치 보존된 elements 생성
-        val pagedElements = if (variant == HwpVariant.HWP_5) {
-            runCatching { extractParagraphElements(temp, pages) }
-                .onFailure { Timber.w(it, "HWP 단락 워킹 실패 — 플랫 폴백") }
-                .getOrNull()
-        } else null
-
-        Timber.d("HWP 열기: variant=$variant, pages=${pages.size}, chars=${text.length}, images=${images.size}, paged=${pagedElements != null}")
-        Handle(uri, temp, pages, variant, images, pagedElements)
-    }
 
     private fun classifyHwpError(t: Throwable): DocumentError {
         val msg = (t.message ?: "").lowercase()
@@ -170,7 +195,7 @@ class HwpDocumentRenderer @Inject constructor(
         }
     }.getOrDefault(false)
 
-    private fun extractText(file: File, variant: HwpVariant): String = when (variant) {
+    private fun extractText(file: File, variant: HwpVariant, password: String?): String = when (variant) {
         HwpVariant.HWP_5 -> {
             val doc = kr.dogfoot.hwplib.reader.HWPReader.fromFile(file.absolutePath)
             kr.dogfoot.hwplib.tool.textextractor.TextExtractor.extract(
@@ -179,7 +204,17 @@ class HwpDocumentRenderer @Inject constructor(
             )
         }
         HwpVariant.HWPX -> {
-            val doc = kr.dogfoot.hwpxlib.reader.HWPXReader.fromFilepath(file.absolutePath)
+            val doc = if (password.isNullOrEmpty()) {
+                kr.dogfoot.hwpxlib.reader.HWPXReader.fromFilepath(file.absolutePath)
+            } else {
+                try {
+                    kr.dogfoot.hwpxlib.reader.HWPXReaderForEncrypted
+                        .fromFilepath(file.absolutePath, password)
+                } catch (t: Throwable) {
+                    Timber.w(t, "HWPX 복호화 실패 — 비밀번호 불일치로 간주")
+                    throw DocumentError.PasswordProtected(wrongPassword = true, cause = t)
+                }
+            }
             kr.dogfoot.hwpxlib.tool.textextractor.TextExtractor.extract(
                 doc,
                 kr.dogfoot.hwpxlib.tool.textextractor.TextExtractMethod.InsertControlTextBetweenParagraphText,
