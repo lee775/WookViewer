@@ -30,26 +30,10 @@ jobs:
       - name: Checkout this repo (for build configs)
         uses: actions/checkout@v4
 
-      - name: Free disk space (LO build needs ~40GB)
-        run: |
-          # GitHub-hosted ubuntu-22.04 runner는 ~14GB만 가용. 공격적 정리 시도.
-          echo "== Before =="
-          df -h
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /usr/local/share/powershell
-          sudo rm -rf /usr/local/share/chromium
-          sudo rm -rf /opt/microsoft
-          sudo rm -rf /opt/google
-          sudo rm -rf /home/linuxbrew
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          sudo apt-get remove -y --purge ghc* podman* docker-* google-chrome-* firefox-* || true
-          sudo apt-get autoremove -y
-          sudo apt-get clean
-          echo "== After =="
-          df -h
+      - name: Setup Android SDK + NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-28 build-tools;28.0.3 ndk;25.2.9519653'
 
       - name: Install build dependencies
         run: |
@@ -62,10 +46,26 @@ jobs:
             gperf nasm pkg-config \
             libssl-dev libcrypt-dev
 
-      - name: Setup Android SDK + NDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-28 build-tools;28.0.3 ndk;25.2.9519653'
+      - name: Free disk space (LO build needs ~40GB)
+        run: |
+          # SDK 보존하고 다른 큰 패키지만 제거
+          echo "== Before =="
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/share/chromium
+          sudo rm -rf /opt/microsoft
+          sudo rm -rf /opt/google
+          sudo rm -rf /home/linuxbrew
+          # AGENT_TOOLSDIRECTORY는 보통 /opt/hostedtoolcache — 캐시는 비웠지만
+          # Android SDK는 별도 위치라 안전
+          sudo apt-get remove -y --purge ghc* podman* docker-* google-chrome-* firefox-* || true
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+          echo "== After =="
+          df -h
 
       - name: Clone LibreOffice core
         run: |

@@ -8,42 +8,31 @@ import javax.inject.Singleton
 /**
  * LibreOfficeKit 네이티브 라이브러리 가용성 런타임 체크.
  *
+ * LO Android는 단일 .so가 아닌 ~14개의 native lib을 의존성 순서대로
+ * 로드해야 한다 (NSS 트리플 → c++_shared → lo-native-code).
+ * 어느 하나라도 누락되면 UnsatisfiedLinkError.
+ *
  * 빌드 단계의 통합:
- *   - 'liblo-native-code.so' 가 jniLibs/<abi>/ 에 존재해야 함
+ *   - 모든 .so 가 jniLibs/<abi>/ 에 존재해야 함
  *   - 별도 워크플로(.github/workflows/build-libreoffice-android.yml)로 빌드
  *   - 빌드 산출물(~100MB)은 git에 안 들어감 — GitHub Release/artifact로 배포
  *
  * 런타임 시:
- *   - [isAvailable] 이 System.loadLibrary 시도, 실패하면 false 반환
- *   - 결과를 캐싱해 반복 호출 시 빠르게 응답
- *   - false이면 RendererRegistry 가 LOK 렌더러를 라우팅하지 않음 → 기존 폴백 사용
- *
- * **현재 상태**: 네이티브 라이브러리 미빌드. 항상 false 반환.
- * Session 2 에서 LO Android 빌드를 실행하면 libs 가 들어오고 자동으로 사용 가능.
+ *   - [isAvailable] 이 모든 libs을 순차 로드. 모두 성공해야 true.
+ *   - 결과를 캐싱해 반복 호출 시 빠르게 응답.
+ *   - false이면 RendererRegistry 가 LOK 렌더러를 라우팅하지 않음.
  */
 @Singleton
 class LokAvailability @Inject constructor() {
 
     private val cached = AtomicReference<Boolean?>(null)
 
-    /**
-     * 네이티브 라이브러리 로드 시도. 첫 호출에서만 실제 로드를 시도하고
-     * 이후엔 캐시 값 반환. 스레드 안전.
-     *
-     * @return libs 로드 성공 시 true. 라이브러리 부재/링크 실패 시 false.
-     */
     fun isAvailable(): Boolean {
         cached.get()?.let { return it }
 
         val result = synchronized(this) {
             cached.get() ?: run {
-                val loaded = runCatching {
-                    System.loadLibrary(LIB_NAME)
-                    true
-                }.getOrElse { e ->
-                    Timber.i("LibreOfficeKit 네이티브 라이브러리 미가용: ${e.message}")
-                    false
-                }
+                val loaded = loadAllLibs()
                 cached.set(loaded)
                 loaded
             }
@@ -51,7 +40,40 @@ class LokAvailability @Inject constructor() {
         return result
     }
 
+    /**
+     * LibreOfficeKit.NativeLibLoader.load() 와 동일한 순서로 로드 시도.
+     * 어느 단계든 실패하면 false 반환 — 안전하게 폴백.
+     */
+    private fun loadAllLibs(): Boolean = runCatching {
+        for (lib in REQUIRED_LIBS) {
+            System.loadLibrary(lib)
+        }
+        true
+    }.getOrElse { e ->
+        Timber.i("LibreOfficeKit 네이티브 라이브러리 미가용: ${e.javaClass.simpleName}: ${e.message}")
+        false
+    }
+
     private companion object {
-        const val LIB_NAME = "lo-native-code"
+        /**
+         * LibreOfficeKit.NativeLibLoader.load() 와 동일한 순서.
+         * NSS 트리플(crypto), 그 다음 LO 의존성.
+         */
+        val REQUIRED_LIBS = listOf(
+            "nspr4",
+            "plds4",
+            "plc4",
+            "nssutil3",
+            "freebl3",
+            "sqlite3",
+            "softokn3",
+            "nss3",
+            "nssckbi",
+            "nssdbm3",
+            "smime3",
+            "ssl3",
+            "c++_shared",
+            "lo-native-code"
+        )
     }
 }

@@ -18,18 +18,25 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.wook.viewer.data.lok.LokSession
 import com.wook.viewer.presentation.filelist.FileListScreen
 import com.wook.viewer.presentation.settings.SettingsScreen
 import com.wook.viewer.presentation.theme.WookViewerTheme
 import com.wook.viewer.presentation.viewer.ViewerScreen
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    @Inject lateinit var lokSession: LokSession
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val incoming: Uri? = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.data
+
+        // LibreOfficeKit 시도 — native libs 없으면 즉시 false 반환, 회귀 없음
+        lokSession.tryInit(this)
 
         setContent {
             val appVm: AppViewModel = hiltViewModel()
