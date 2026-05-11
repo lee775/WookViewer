@@ -128,6 +128,9 @@ class DocxDocumentRenderer @Inject constructor(
 
         for (elem in elements) {
             when (elem) {
+                is PageElement.PositionedLayout -> {
+                    // DOCX 페이지에는 슬라이드 형식 요소가 안 나옴 — 안전상 무시
+                }
                 is PageElement.TextElement -> {
                     val text = elem.text
                     if (text.length > LIMIT) {

@@ -90,6 +90,9 @@ private fun InlineElements(
     Column(modifier = Modifier.fillMaxWidth()) {
         elements.forEach { elem ->
             when (elem) {
+                is PageElement.PositionedLayout -> {
+                    // InlineElements 모드에서는 처리 안 함 (상위 분기에서 잡혀야 함)
+                }
                 is PageElement.TextElement -> {
                     val text = elem.text
                     val localStart = textOffset

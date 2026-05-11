@@ -211,55 +211,56 @@ class HwpDocumentRenderer @Inject constructor(
      *
      * hwplib API가 변형되면 runCatching으로 보호.
      */
+    /**
+     * hwplib의 내부 필드 가시성 변동에 안전하도록 전부 리플렉션으로 호출.
+     * 어떤 단계든 실패하면 null 반환 → 호출 측이 플랫 폴백 사용.
+     */
     private fun extractParagraphElements(
         file: File,
         textPages: List<TextPage>
     ): List<List<PageElement>>? = runCatching {
         val doc = kr.dogfoot.hwplib.reader.HWPReader.fromFile(file.absolutePath)
-        val binItems = doc.binData?.embeddedBinaryDataList ?: emptyList<Any?>()
 
-        // 단락 단위로 (text, images) 추출
+        val binItems = invokeGetter(invokeGetter(doc, "getBinData"), "getEmbeddedBinaryDataList")
+            as? List<*> ?: emptyList<Any?>()
+
+        val bodyText = invokeGetter(doc, "getBodyText") ?: return@runCatching null
+        val sections = invokeGetter(bodyText, "getSectionList") as? List<*>
+            ?: return@runCatching null
+
         data class ParaPiece(val text: String, val images: List<Bitmap>)
         val pieces = mutableListOf<ParaPiece>()
 
-        val sections = doc.bodyText?.sectionList ?: return@runCatching null
         for (section in sections) {
-            val paragraphs = section.paragraphList ?: continue
+            val paragraphs = invokeGetter(section, "getParagraphList") as? List<*>
+                ?: continue
             for (paragraph in paragraphs) {
-                // 단락 텍스트 — TextExtractor 사용
+                if (paragraph == null) continue
+
                 val paraText = runCatching {
                     kr.dogfoot.hwplib.tool.textextractor.TextExtractor.extract(
-                        paragraph,
+                        paragraph as kr.dogfoot.hwplib.`object`.bodytext.Paragraph,
                         kr.dogfoot.hwplib.tool.textextractor.TextExtractMethod
                             .InsertControlTextBetweenParagraphText
                     )
                 }.getOrDefault("")
 
-                // 단락의 ControlPicture 들
-                val controls = paragraph.controlList ?: emptyList<Any?>()
+                val controls = invokeGetter(paragraph, "getControlList") as? List<*>
+                    ?: emptyList<Any?>()
+
                 val paraImages = controls.mapNotNull { control ->
-                    // ControlPicture 인지 type ID로 확인 — hwplib 내부 정의 의존성 회피
-                    val ctrlClass = control?.javaClass ?: return@mapNotNull null
-                    val isPicture = ctrlClass.simpleName?.let {
-                        it == "ControlPicture" || it.contains("Picture")
-                    } ?: false
-                    if (!isPicture) return@mapNotNull null
+                    if (control == null) return@mapNotNull null
+                    val simpleName = control.javaClass.simpleName ?: return@mapNotNull null
+                    if (!simpleName.contains("Picture", ignoreCase = true)) return@mapNotNull null
 
-                    // binItemID 메서드/필드 읽기
-                    val binIdx = runCatching {
-                        val m = ctrlClass.methods.firstOrNull {
-                            it.name == "getBinItemID" || it.name.endsWith("getBinDataID")
-                        }
-                        (m?.invoke(control) as? Number)?.toInt()
-                    }.getOrNull() ?: return@mapNotNull null
+                    val binIdx = (invokeGetter(control, "getBinDataID")
+                        ?: invokeGetter(control, "getBinItemID")) as? Number
+                        ?: return@mapNotNull null
 
-                    val binItem = binItems.getOrNull(binIdx - 1) ?: return@mapNotNull null
-                    val bytes = runCatching {
-                        val m = binItem.javaClass.methods.firstOrNull {
-                            it.name == "getData" || it.name == "getBinaryData"
-                        }
-                        m?.invoke(binItem) as? ByteArray
-                    }.getOrNull() ?: return@mapNotNull null
+                    val idx0 = binIdx.toInt() - 1
+                    val binItem = binItems.getOrNull(idx0) ?: return@mapNotNull null
+                    val bytes = invokeGetter(binItem, "getData") as? ByteArray
+                        ?: return@mapNotNull null
 
                     runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
                 }
@@ -268,14 +269,15 @@ class HwpDocumentRenderer @Inject constructor(
             }
         }
 
-        // 페이지 단위 슬롯에 단락 분배 — 페이지 텍스트 길이 누적 기준
         if (textPages.isEmpty()) return@runCatching null
         val pageElements = MutableList(textPages.size) { mutableListOf<PageElement>() }
         var pageIdx = 0
         var pageCharBudget = textPages[0].text.length
         for (piece in pieces) {
             if (pageIdx >= pageElements.size) break
-            pageElements[pageIdx] += PageElement.TextElement(piece.text)
+            if (piece.text.isNotEmpty()) {
+                pageElements[pageIdx] += PageElement.TextElement(piece.text + "\n")
+            }
             piece.images.forEach { pageElements[pageIdx] += PageElement.ImageElement(it) }
             pageCharBudget -= piece.text.length
             if (pageCharBudget <= 0 && pageIdx < pageElements.size - 1) {
@@ -285,6 +287,17 @@ class HwpDocumentRenderer @Inject constructor(
         }
         pageElements.map { it.toList() }
     }.onFailure { Timber.w(it, "HWP 단락 분석 중 예외 — 폴백") }.getOrNull()
+
+    /** Java bean getter 한 번 호출 — 실패 시 null. */
+    private fun invokeGetter(target: Any?, methodName: String): Any? {
+        if (target == null) return null
+        return runCatching {
+            val m = target.javaClass.methods.firstOrNull {
+                it.name == methodName && it.parameterCount == 0
+            } ?: return@runCatching null
+            m.invoke(target)
+        }.getOrNull()
+    }
 
     private fun extractHwp5Images(file: File): List<Bitmap> = runCatching {
         val doc = kr.dogfoot.hwplib.reader.HWPReader.fromFile(file.absolutePath)

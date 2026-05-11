@@ -65,8 +65,10 @@ fun PositionedSlideView(
                     }
 
                     // 크기 0이면 placeholder가 layout 상속한 경우 — 슬라이드 전체로 그리기 회피
-                    val finalW = if (wDp > 0.dp) wDp else maxWidth
-                    val finalH = if (hDp > 0.dp) hDp else maxHeight
+                    val outerW = this@BoxWithConstraints.maxWidth
+                    val outerH = this@BoxWithConstraints.maxHeight
+                    val finalW = if (wDp > 0.dp) wDp else outerW
+                    val finalH = if (hDp > 0.dp) hDp else outerH
 
                     Box(
                         modifier = Modifier
