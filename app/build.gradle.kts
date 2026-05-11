@@ -116,8 +116,12 @@ dependencies {
 
     // OOXML 암호 해제 (DOCX/PPTX/XLSX의 Agile/Standard encryption)
     // POI 3.17 — Apache 2.0, hwplib(POI 3.9)와 POIFS API 호환.
-    // xmlbeans 트랜지티브 ~3MB 포함, 전체 추가 ~10-15MB APK 사이즈.
-    implementation(libs.poi.ooxml)
+    // xmlbeans 2.6.0이 자체에 org.apache.xmlbeans.xml.stream.* (stax-api 복제)를
+    // 포함해 외부 stax-api와 중복 — 트랜지티브 stax-api 제거.
+    implementation(libs.poi.ooxml) {
+        exclude(group = "stax", module = "stax-api")
+        exclude(group = "javax.xml.stream", module = "stax-api")
+    }
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
@@ -127,4 +131,11 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+}
+
+// xmlbeans 단일 버전 강제 — Gradle resolution이 두 경로로 동일 jar를 끌어들이는 걸 방지
+configurations.configureEach {
+    resolutionStrategy {
+        force("org.apache.xmlbeans:xmlbeans:2.6.0")
+    }
 }
