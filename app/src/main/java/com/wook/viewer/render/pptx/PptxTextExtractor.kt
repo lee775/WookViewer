@@ -202,8 +202,8 @@ internal object PptxTextExtractor {
                         attrs?.getValue("cy")?.toLongOrNull()?.let { shapeH = it }
                     }
                     "txBody" -> if (inShape) inTxBody = true
-                    "r" -> if (inTxBody) inRun = true
-                    "t" -> if (inTxBody) inT = true
+                    "r" -> inRun = true
+                    "t" -> inT = true
                     "blip" -> if (inShape && isPic) {
                         val embed = attrs?.getValue(
                             "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
@@ -211,14 +211,19 @@ internal object PptxTextExtractor {
                         ) ?: attrs?.getValue("r:embed") ?: attrs?.getValue("embed")
                         if (!embed.isNullOrBlank()) shapeRId = embed
                     }
-                    "br" -> if (inTxBody) shapeText.append('\n')
+                    "br" -> {
+                        flatText.append('\n')
+                        if (inTxBody) shapeText.append('\n')
+                    }
                 }
             }
 
             override fun characters(ch: CharArray?, start: Int, length: Int) {
-                if (inT && inTxBody && ch != null) {
-                    shapeText.append(ch, start, length)
-                    flatText.append(ch, start, length)
+                if (inT && ch != null) {
+                    flatText.append(ch, start, length)  // 검색용 — 도형 안 포함
+                    if (inShape && inTxBody) {
+                        shapeText.append(ch, start, length)  // 도형 위치 보존용
+                    }
                 }
             }
 
@@ -228,7 +233,6 @@ internal object PptxTextExtractor {
                         if (inShape) {
                             val text = shapeText.toString().trim().ifBlank { null }
                             val bmp = shapeRId?.let { rIdToBitmap[it] }
-                            // 좌표/크기 0이면 placeholder가 layout 상속한 경우 — 슬라이드 전체로 폴백
                             if (text != null || bmp != null) {
                                 shapes += PositionedShape(
                                     xEmu = shapeX,
@@ -248,8 +252,14 @@ internal object PptxTextExtractor {
                     "txBody" -> inTxBody = false
                     "r" -> inRun = false
                     "t" -> inT = false
-                    "p" -> if (inTxBody) {
-                        shapeText.append('\n')
+                    "p" -> {
+                        flatText.append('\n')
+                        if (inTxBody) shapeText.append('\n')
+                    }
+                    "tc" -> {
+                        flatText.append('\t')
+                    }
+                    "tr" -> {
                         flatText.append('\n')
                     }
                 }
