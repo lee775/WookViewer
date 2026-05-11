@@ -1,5 +1,7 @@
 package com.wook.viewer.render.docx
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import org.xml.sax.Attributes
 import org.xml.sax.helpers.DefaultHandler
 import java.io.ByteArrayOutputStream
@@ -9,60 +11,58 @@ import java.util.zip.ZipInputStream
 import javax.xml.parsers.SAXParserFactory
 
 /**
- * DOCX (.docx) 본문 텍스트 추출기.
+ * DOCX 본문 텍스트 + 임베디드 이미지 추출.
  *
- * DOCX 구조:
- *   - .docx = ZIP
- *   - 본문은 `word/document.xml` (WordprocessingML)
- *   - `<w:p>` 단락, `<w:r>` 런(run), `<w:t>` 텍스트
- *   - `<w:tbl>/<w:tr>/<w:tc>` 표
- *
- * 처리 대상:
- *   - 본문 단락/표 텍스트
- *   - tab, line break
- *
- * 무시:
- *   - 머리말/꼬리말 (header.xml/footer.xml)
- *   - 댓글, 트랙체인지
- *   - 이미지, 도형, SmartArt
- *   - 서식 (글꼴, 색상, 정렬)
- *
- * 의존성: java.util.zip + javax.xml SAX (JVM 표준) — 외부 라이브러리 0개.
+ * 이미지는 `word/media/` 아래 png/jpg/jpeg/gif/bmp/webp 파일. 위치 정보는 어렵게
+ * 매핑해야 하므로 일단 단순히 "이 문서에 들어있는 이미지 전부"를 반환한다.
  */
 internal object DocxTextExtractor {
 
     private const val DOCUMENT_XML_PATH = "word/document.xml"
+    private val IMAGE_EXT = setOf("png", "jpg", "jpeg", "gif", "bmp", "webp")
 
-    /**
-     * @throws java.io.IOException ZIP/I-O 오류
-     * @throws DocxFormatException ZIP이 아니거나 word/document.xml이 없음 (예: 구형 .doc 바이너리)
-     * @throws org.xml.sax.SAXException XML 파싱 오류
-     */
+    data class DocxContent(
+        val text: String,
+        val images: List<Bitmap>
+    )
+
     @Throws(Exception::class)
-    fun extract(input: InputStream): String {
-        val xmlBytes = readDocumentXmlFromZip(input)
-            ?: throw DocxFormatException("word/document.xml not found — not a DOCX")
-        return parseDocumentXml(xmlBytes.inputStream())
-    }
+    fun extract(input: InputStream): DocxContent {
+        var xmlBytes: ByteArray? = null
+        val imageBytesList = mutableListOf<ByteArray>()
 
-    private fun readDocumentXmlFromZip(input: InputStream): ByteArray? {
         try {
             ZipInputStream(input).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
-                    if (entry.name == DOCUMENT_XML_PATH) {
-                        return zis.copyAllBytes()
+                    val name = entry.name
+                    when {
+                        name == DOCUMENT_XML_PATH -> xmlBytes = zis.copyAllBytes()
+                        isImageEntry(name, "word/media/") -> imageBytesList.add(zis.copyAllBytes())
                     }
                     zis.closeEntry()
                     entry = zis.nextEntry
                 }
             }
         } catch (e: ZipException) {
-            // 바이너리 .doc, 손상된 zip 등
             throw DocxFormatException("Not a valid ZIP/DOCX file", e)
         }
-        return null
+
+        val xml = xmlBytes ?: throw DocxFormatException("word/document.xml not found — not a DOCX")
+        val text = parseDocumentXml(xml.inputStream())
+        val images = imageBytesList.mapNotNull { decodeBitmap(it) }
+        return DocxContent(text, images)
     }
+
+    private fun isImageEntry(name: String, prefix: String): Boolean {
+        if (!name.startsWith(prefix)) return false
+        val ext = name.substringAfterLast('.', "").lowercase()
+        return ext in IMAGE_EXT
+    }
+
+    private fun decodeBitmap(bytes: ByteArray): Bitmap? = runCatching {
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }.getOrNull()
 
     private fun ZipInputStream.copyAllBytes(): ByteArray {
         val out = ByteArrayOutputStream()
@@ -79,7 +79,6 @@ internal object DocxTextExtractor {
         val sb = StringBuilder()
         val factory = SAXParserFactory.newInstance().apply {
             isNamespaceAware = true
-            // XXE 방어 — 외부 entity 참조 비활성
             runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
             runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
             runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
@@ -106,13 +105,12 @@ internal object DocxTextExtractor {
                 val name = pickName(localName, qName)
                 when (name) {
                     "t" -> inText = false
-                    "p" -> sb.append('\n')      // 단락 종료
-                    "tr" -> sb.append('\n')     // 표 행 종료
-                    "tc" -> sb.append('\t')     // 표 셀 종료
+                    "p" -> sb.append('\n')
+                    "tr" -> sb.append('\n')
+                    "tc" -> sb.append('\t')
                 }
             }
 
-            /** namespace-aware일 때 localName 사용, 아니면 qName에서 prefix 제거. */
             private fun pickName(localName: String?, qName: String?): String =
                 localName?.takeIf { it.isNotEmpty() }
                     ?: qName?.substringAfterLast(':')

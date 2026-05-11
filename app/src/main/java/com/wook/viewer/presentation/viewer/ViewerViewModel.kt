@@ -192,6 +192,18 @@ class ViewerViewModel @Inject constructor(
         }
     }
 
+    suspend fun getPageImages(index: Int): List<android.graphics.Bitmap> {
+        val r = renderer ?: return emptyList()
+        val h = handle ?: return emptyList()
+        return try {
+            r.getPageImages(h, index)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            emptyList()
+        }
+    }
+
     // ---- 검색 ----
 
     fun setSearchActive(active: Boolean) {

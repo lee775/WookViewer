@@ -48,6 +48,18 @@ interface DocumentRenderer {
      */
     suspend fun getPageText(handle: DocumentHandle, index: Int): String? = null
 
+    /**
+     * 페이지에 포함된 임베디드 이미지 (TEXT_ONLY 포맷용).
+     *
+     * Office/HWP 같은 ZIP 기반 포맷은 본문 텍스트만으로는 시각 정보가 빠지므로,
+     * 문서 안의 그림 파일을 꺼내서 UI에 함께 표시한다.
+     *
+     * - PPTX: 슬라이드별로 해당 슬라이드에 참조된 이미지만 반환
+     * - DOCX/XLSX/HWP: 위치 정보가 어려워 첫 페이지(index == 0)에 모두 표시
+     * - PDF/IMAGE: 기본 빈 리스트 (이미 비트맵 자체가 시각 그대로)
+     */
+    suspend fun getPageImages(handle: DocumentHandle, index: Int): List<android.graphics.Bitmap> = emptyList()
+
     /** 핸들 닫기. */
     suspend fun close(handle: DocumentHandle)
 }

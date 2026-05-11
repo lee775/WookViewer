@@ -1,6 +1,7 @@
 package com.wook.viewer.render.docx
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import com.wook.viewer.domain.error.DocumentError
 import com.wook.viewer.domain.model.DocumentFormat
@@ -18,22 +19,6 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * DOCX 렌더러 (v0.3, TEXT_ONLY 충실도).
- *
- * 구현 전략:
- *   - .docx (ZIP+XML) → DocxTextExtractor로 본문 텍스트 추출
- *   - .doc (구형 OLE 바이너리) → UnsupportedVariant 에러
- *   - 텍스트는 공통 TextPaginator로 페이지 분할, TextPageRenderer로 Bitmap
- *
- * 외부 라이브러리 0개 — APK 사이즈 영향 없음.
- *
- * 한계 (v0.2 안내 배너로 사용자에게 노출):
- *   - 표는 셀 텍스트만 (탭 구분), 구조 X
- *   - 이미지/도형/SmartArt 무시
- *   - 머리말/꼬리말/댓글/트랙체인지 무시
- *   - 글꼴/색상/정렬 단순화
- */
 @Singleton
 class DocxDocumentRenderer @Inject constructor(
     @ApplicationContext private val context: Context
@@ -43,11 +28,11 @@ class DocxDocumentRenderer @Inject constructor(
 
     private class Handle(
         override val uri: Uri,
-        val pages: List<TextPage>
+        val pages: List<TextPage>,
+        val images: List<Bitmap>
     ) : DocumentHandle
 
     override suspend fun open(uri: Uri): DocumentHandle = withContext(Dispatchers.IO) {
-        // .doc 구형 바이너리는 사전에 분기
         val name = uri.lastPathSegment ?: ""
         if (name.endsWith(".doc", ignoreCase = true) &&
             !name.endsWith(".docx", ignoreCase = true)
@@ -55,7 +40,7 @@ class DocxDocumentRenderer @Inject constructor(
             throw DocumentError.UnsupportedVariant("doc (구형 바이너리)")
         }
 
-        val text = try {
+        val content = try {
             context.contentResolver.openInputStream(uri).use { input ->
                 requireNotNull(input) { "openInputStream returned null for $uri" }
                 DocxTextExtractor.extract(input)
@@ -68,16 +53,16 @@ class DocxDocumentRenderer @Inject constructor(
             throw classifyDocxError(t)
         }
 
-        val pages = TextPaginator.paginate(text)
-        Timber.d("DOCX 열기 완료: pages=${pages.size}, chars=${text.length}")
-        Handle(uri, pages)
+        val pages = TextPaginator.paginate(content.text)
+        Timber.d("DOCX 열기 완료: pages=${pages.size}, chars=${content.text.length}, images=${content.images.size}")
+        Handle(uri, pages, content.images)
     }
 
     override suspend fun pageCount(handle: DocumentHandle): Int =
         (handle as Handle).pages.size
 
     override suspend fun pageSize(handle: DocumentHandle, index: Int): PageSize =
-        PageSize(595f, 842f)  // A4
+        PageSize(595f, 842f)
 
     override suspend fun renderPage(
         handle: DocumentHandle,
@@ -96,8 +81,15 @@ class DocxDocumentRenderer @Inject constructor(
         return h.pages.getOrNull(index)?.text
     }
 
+    /** DOCX는 위치 정보가 복잡해서 모든 이미지를 첫 페이지에 표시. */
+    override suspend fun getPageImages(handle: DocumentHandle, index: Int): List<Bitmap> {
+        val h = handle as Handle
+        return if (index == 0) h.images else emptyList()
+    }
+
     override suspend fun close(handle: DocumentHandle) {
-        // 리소스 없음 (스트리밍 추출, 임시 파일 없음)
+        val h = handle as Handle
+        h.images.forEach { runCatching { it.recycle() } }
     }
 
     private fun classifyDocxError(t: Throwable): DocumentError {

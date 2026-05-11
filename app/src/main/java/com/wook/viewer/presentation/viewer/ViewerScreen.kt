@@ -165,6 +165,7 @@ fun ViewerScreen(
                     onPageChanged = vm::onPageChanged,
                     loadBitmap = vm::renderBitmap,
                     loadText = vm::getPageText,
+                    loadImages = vm::getPageImages,
                     matchesForPage = vm::matchesForPage,
                     activeMatchRange = vm::activeMatchRange,
                     pageBgColor = bgColor
@@ -303,6 +304,7 @@ private fun PageContent(
     onPageChanged: (Int) -> Unit,
     loadBitmap: suspend (index: Int, widthPx: Int) -> Bitmap?,
     loadText: suspend (index: Int) -> String?,
+    loadImages: suspend (index: Int) -> List<Bitmap>,
     matchesForPage: (Int) -> List<IntRange>,
     activeMatchRange: (Int) -> IntRange?,
     pageBgColor: Color
@@ -343,6 +345,7 @@ private fun PageContent(
                 TextItem(
                     pageIndex = pageIndex,
                     loadText = loadText,
+                    loadImages = loadImages,
                     matches = matchesForPage(pageIndex),
                     activeMatch = activeMatchRange(pageIndex)
                 )
@@ -374,12 +377,22 @@ private fun BitmapItem(
 private fun TextItem(
     pageIndex: Int,
     loadText: suspend (index: Int) -> String?,
+    loadImages: suspend (index: Int) -> List<Bitmap>,
     matches: List<IntRange>,
     activeMatch: IntRange?
 ) {
     var text by remember(pageIndex) { mutableStateOf<String?>(null) }
-    LaunchedEffect(pageIndex) { text = loadText(pageIndex) ?: "" }
-    TextPageInline(text = text, matches = matches, activeMatch = activeMatch)
+    var images by remember(pageIndex) { mutableStateOf<List<Bitmap>>(emptyList()) }
+    LaunchedEffect(pageIndex) {
+        text = loadText(pageIndex) ?: ""
+        images = loadImages(pageIndex)
+    }
+    TextPageInline(
+        text = text,
+        matches = matches,
+        activeMatch = activeMatch,
+        images = images
+    )
 }
 
 @Composable

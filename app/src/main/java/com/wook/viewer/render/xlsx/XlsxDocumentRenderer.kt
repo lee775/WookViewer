@@ -1,6 +1,7 @@
 package com.wook.viewer.render.xlsx
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import com.wook.viewer.domain.error.DocumentError
 import com.wook.viewer.domain.model.DocumentFormat
@@ -18,18 +19,6 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * XLSX 렌더러 (TEXT_ONLY 충실도).
- *
- * 시트 1개 = 페이지 1개 (PPTX와 같은 매핑). 거대 시트는 TextPaginator 폴백.
- *
- * 한계 (배너로 안내):
- *   - 표는 셀 텍스트만 (탭 구분), 그리드 모양 X
- *   - 셀 서식(굵게/색상/병합) 무시
- *   - 차트/이미지/도형 무시
- *   - 수식은 결과값만 표시 (수식 자체 미노출)
- *   - 시트 순서는 파일명(sheet1, sheet2, ...) 기준
- */
 @Singleton
 class XlsxDocumentRenderer @Inject constructor(
     @ApplicationContext private val context: Context
@@ -39,7 +28,8 @@ class XlsxDocumentRenderer @Inject constructor(
 
     private class Handle(
         override val uri: Uri,
-        val pages: List<TextPage>
+        val pages: List<TextPage>,
+        val images: List<Bitmap>
     ) : DocumentHandle
 
     override suspend fun open(uri: Uri): DocumentHandle = withContext(Dispatchers.IO) {
@@ -50,7 +40,7 @@ class XlsxDocumentRenderer @Inject constructor(
             throw DocumentError.UnsupportedVariant("xls (구형 바이너리)")
         }
 
-        val sheets = try {
+        val content = try {
             context.contentResolver.openInputStream(uri).use { input ->
                 requireNotNull(input) { "openInputStream returned null for $uri" }
                 XlsxTextExtractor.extract(input)
@@ -63,18 +53,18 @@ class XlsxDocumentRenderer @Inject constructor(
             throw classifyError(t)
         }
 
-        val pages = sheets.flatMap { sheet ->
+        val pages = content.sheets.flatMap { sheet ->
             val header = "[${sheet.name}]\n"
-            val content = if (sheet.text.isBlank()) "(빈 시트)" else sheet.text
-            val full = header + content
+            val body = if (sheet.text.isBlank()) "(빈 시트)" else sheet.text
+            val full = header + body
             if (full.length <= TextPaginator.APPROX_CHARS_PER_PAGE) {
                 listOf(TextPage(full))
             } else {
                 TextPaginator.paginate(full)
             }
         }
-        Timber.d("XLSX 열기 완료: sheets=${sheets.size}, pages=${pages.size}")
-        Handle(uri, pages)
+        Timber.d("XLSX 열기 완료: sheets=${content.sheets.size}, pages=${pages.size}, images=${content.images.size}")
+        Handle(uri, pages, content.images)
     }
 
     override suspend fun pageCount(handle: DocumentHandle): Int =
@@ -98,8 +88,15 @@ class XlsxDocumentRenderer @Inject constructor(
         return h.pages.getOrNull(index)?.text
     }
 
+    /** XLSX는 위치 정보가 복잡해서 모든 이미지를 첫 페이지에 표시. */
+    override suspend fun getPageImages(handle: DocumentHandle, index: Int): List<Bitmap> {
+        val h = handle as Handle
+        return if (index == 0) h.images else emptyList()
+    }
+
     override suspend fun close(handle: DocumentHandle) {
-        // 리소스 없음
+        val h = handle as Handle
+        h.images.forEach { runCatching { it.recycle() } }
     }
 
     private fun classifyError(t: Throwable): DocumentError {

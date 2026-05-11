@@ -1,5 +1,7 @@
 package com.wook.viewer.render.xlsx
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import org.xml.sax.Attributes
 import org.xml.sax.helpers.DefaultHandler
 import java.io.ByteArrayOutputStream
@@ -29,14 +31,22 @@ import javax.xml.parsers.SAXParserFactory
 internal object XlsxTextExtractor {
 
     private val SHEET_PATH = Regex("""xl/worksheets/sheet(\d+)\.xml""")
+    private val IMAGE_EXT = setOf("png", "jpg", "jpeg", "gif", "bmp", "webp")
+    private const val MEDIA_PREFIX = "xl/media/"
 
     data class SheetText(val name: String, val text: String)
 
+    data class XlsxContent(
+        val sheets: List<SheetText>,
+        val images: List<Bitmap>
+    )
+
     @Throws(Exception::class)
-    fun extract(input: InputStream): List<SheetText> {
+    fun extract(input: InputStream): XlsxContent {
         var sharedStringsBytes: ByteArray? = null
         var workbookBytes: ByteArray? = null
         val sheetsByNumber = sortedMapOf<Int, ByteArray>()
+        val imageBytesList = mutableListOf<ByteArray>()
 
         try {
             ZipInputStream(input).use { zis ->
@@ -48,6 +58,9 @@ internal object XlsxTextExtractor {
                             sharedStringsBytes = zis.readAllBytesPolyfill()
                         name == "xl/workbook.xml" ->
                             workbookBytes = zis.readAllBytesPolyfill()
+                        name.startsWith(MEDIA_PREFIX) &&
+                            name.substringAfterLast('.', "").lowercase() in IMAGE_EXT ->
+                            imageBytesList.add(zis.readAllBytesPolyfill())
                         else -> {
                             val match = SHEET_PATH.matchEntire(name)
                             if (match != null) {
@@ -71,11 +84,15 @@ internal object XlsxTextExtractor {
         val sharedStrings = sharedStringsBytes?.let { parseSharedStrings(it.inputStream()) } ?: emptyList()
         val sheetNames = workbookBytes?.let { parseSheetNames(it.inputStream()) } ?: emptyList()
 
-        return sheetsByNumber.entries.mapIndexed { idx, (num, bytes) ->
+        val sheets = sheetsByNumber.entries.mapIndexed { idx, (num, bytes) ->
             val displayName = sheetNames.getOrNull(idx) ?: "Sheet$num"
             val text = parseSheetData(bytes.inputStream(), sharedStrings)
             SheetText(name = displayName, text = text)
         }
+        val images = imageBytesList.mapNotNull { bytes ->
+            runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
+        }
+        return XlsxContent(sheets, images)
     }
 
     private fun ZipInputStream.readAllBytesPolyfill(): ByteArray {
