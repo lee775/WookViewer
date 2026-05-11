@@ -12,7 +12,7 @@ on:
         required: true
       lo_branch:
         description: 'LibreOffice core git 브랜치/태그'
-        default: 'libreoffice-7-6'
+        default: 'libreoffice-26-2'
         required: true
 
 # 단일 잡 — 한 ABI당 4시간+, GitHub-hosted runner의 6시간 한도 안에서 단일 ABI만 권장.
@@ -92,6 +92,24 @@ jobs:
           cd lo-core
           echo "LO_SRC=$(pwd)" >> $GITHUB_ENV
 
+      # ccache 캐시 — 컴파일 결과물 재사용. 같은 source가 반복 빌드되면 즉시 hit.
+      # 빌드 실패 후 재시도 시 이전 성공 파일들은 ccache에서 즉시 가져옴 → 사실상 resume.
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: lo-ccache-${{ inputs.lo_branch }}-${{ matrix.abi }}-${{ github.sha }}
+          restore-keys: |
+            lo-ccache-${{ inputs.lo_branch }}-${{ matrix.abi }}-
+            lo-ccache-${{ inputs.lo_branch }}-
+
+      - name: Configure ccache for build
+        run: |
+          mkdir -p ~/.ccache
+          # 최대 캐시 크기 — GitHub Actions cache 10GB 한도 안에서
+          ccache -M 5G
+          ccache -s
+
       - name: Configure LibreOffice for Android (${{ matrix.abi }})
         working-directory: lo-core
         env:
@@ -112,14 +130,16 @@ jobs:
             ls distro-configs/ | grep -i android || true
             exit 1
           fi
-          # LO 7-6의 distro-configs는 NDK 경로를 명시 안 함 → 인자로 직접 전달
+          # distro-configs는 NDK 경로를 명시 안 함 → 인자로 직접 전달
+          # --enable-ccache 로 컴파일 캐시 활용 (재시도 시 결정적 가속)
           export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
           ./autogen.sh \
             --with-distro="$DISTRO" \
             --with-android-ndk="$ANDROID_NDK_HOME" \
             --with-android-sdk="$ANDROID_HOME" \
-            --with-android-api-level=28
+            --with-android-api-level=28 \
+            --enable-ccache
 
       - name: Build LibreOffice (실제 빌드 — 수 시간)
         working-directory: lo-core
@@ -127,8 +147,10 @@ jobs:
         run: |
           # Android 빌드는 distro-configs 가 지정한 cross-target 으로
           # 기본 make 가 lo-native-code.so 생성까지 처리.
-          # 병렬 빌드 — 메모리 압박 시 -j$(nproc/2) 로 낮춰야 할 수도.
-          make -j$(nproc)
+          # ccache 가 캐시 hit 시 컴파일 시간 거의 0 — 재시도가 매우 빠름.
+          # -k 옵션: 한 모듈 실패해도 다른 모듈 계속 → 부분 캐시 채우기
+          make -j$(nproc) -k || make -j$(nproc)
+          ccache -s  # 캐시 통계 출력
 
       - name: Locate output .so
         working-directory: lo-core
