@@ -33,7 +33,10 @@ sealed interface PageElement {
  *
  * - text 만 있으면 텍스트 박스
  * - bitmap 만 있으면 사진/이미지
- * - 둘 다 있으면 이미지 위에 텍스트 오버레이 (드물지만 가능)
+ * - 둘 다 있으면 이미지 배경 위에 텍스트 오버레이 (도형의 BlipFill 사용 시)
+ *
+ * 폰트/정렬 정보는 PPTX 원본의 a:rPr sz, a:pPr algn, a:bodyPr anchor 에서 추출.
+ * null이면 기본값 (좌측 상단 정렬, 18pt).
  */
 data class PositionedShape(
     val xEmu: Long,
@@ -41,5 +44,12 @@ data class PositionedShape(
     val widthEmu: Long,
     val heightEmu: Long,
     val text: String? = null,
-    val bitmap: Bitmap? = null
+    val bitmap: Bitmap? = null,
+    /** PPTX text run의 sz/100 단위 폰트 크기. null이면 18pt 기본. */
+    val fontSizePt: Float? = null,
+    val hAlign: HorizontalAlign = HorizontalAlign.LEFT,
+    val vAlign: VerticalAlign = VerticalAlign.TOP
 )
+
+enum class HorizontalAlign { LEFT, CENTER, RIGHT, JUSTIFY }
+enum class VerticalAlign { TOP, CENTER, BOTTOM }

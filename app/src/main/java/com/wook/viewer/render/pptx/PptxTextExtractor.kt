@@ -2,7 +2,9 @@ package com.wook.viewer.render.pptx
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.wook.viewer.domain.model.HorizontalAlign
 import com.wook.viewer.domain.model.PositionedShape
+import com.wook.viewer.domain.model.VerticalAlign
 import org.xml.sax.Attributes
 import org.xml.sax.helpers.DefaultHandler
 import java.io.ByteArrayOutputStream
@@ -172,7 +174,6 @@ internal object PptxTextExtractor {
             private var inTxBody = false
             private var inRun = false
             private var inT = false
-            private var inBlip = false  // pic 안 a:blipFill/a:blip
 
             private var shapeX: Long = 0
             private var shapeY: Long = 0
@@ -180,6 +181,10 @@ internal object PptxTextExtractor {
             private var shapeH: Long = 0
             private var shapeText = StringBuilder()
             private var shapeRId: String? = null
+            // 폰트/정렬 — 도형 안에서 발견되는 첫 값 또는 가장 큰 sz 사용
+            private var shapeFontSizePt: Float? = null
+            private var shapeHAlign: HorizontalAlign = HorizontalAlign.LEFT
+            private var shapeVAlign: VerticalAlign = VerticalAlign.TOP
 
             override fun startElement(uri: String?, localName: String?, qName: String?, attrs: Attributes?) {
                 val name = pickName(localName, qName)
@@ -190,6 +195,9 @@ internal object PptxTextExtractor {
                         shapeX = 0; shapeY = 0; shapeW = 0; shapeH = 0
                         shapeText.setLength(0)
                         shapeRId = null
+                        shapeFontSizePt = null
+                        shapeHAlign = HorizontalAlign.LEFT
+                        shapeVAlign = VerticalAlign.TOP
                     }
                     "spPr" -> if (inShape) inSpPr = true
                     "xfrm" -> if (inShape && inSpPr) inXfrm = true
@@ -202,14 +210,46 @@ internal object PptxTextExtractor {
                         attrs?.getValue("cy")?.toLongOrNull()?.let { shapeH = it }
                     }
                     "txBody" -> if (inShape) inTxBody = true
+                    "bodyPr" -> if (inShape && inTxBody) {
+                        attrs?.getValue("anchor")?.let { a ->
+                            shapeVAlign = when (a) {
+                                "t" -> VerticalAlign.TOP
+                                "ctr" -> VerticalAlign.CENTER
+                                "b" -> VerticalAlign.BOTTOM
+                                else -> shapeVAlign
+                            }
+                        }
+                    }
+                    "pPr" -> if (inShape && inTxBody) {
+                        attrs?.getValue("algn")?.let { a ->
+                            shapeHAlign = when (a) {
+                                "l" -> HorizontalAlign.LEFT
+                                "ctr" -> HorizontalAlign.CENTER
+                                "r" -> HorizontalAlign.RIGHT
+                                "just" -> HorizontalAlign.JUSTIFY
+                                else -> shapeHAlign
+                            }
+                        }
+                    }
                     "r" -> inRun = true
+                    "rPr" -> if (inShape && inTxBody) {
+                        // sz는 1/100 포인트. 도형의 첫 비-기본 sz를 채택
+                        attrs?.getValue("sz")?.toIntOrNull()?.let { sz ->
+                            val pt = sz / 100f
+                            // 더 큰 sz가 도형 내에 있으면 그것을 채택 (제목 텍스트 우선)
+                            if (shapeFontSizePt == null || pt > (shapeFontSizePt ?: 0f)) {
+                                shapeFontSizePt = pt
+                            }
+                        }
+                    }
                     "t" -> inT = true
-                    "blip" -> if (inShape && isPic) {
+                    // p:pic의 명시적 picture는 isPic=true에서, p:sp의 도형 배경 이미지도 동일하게 추출
+                    "blip" -> if (inShape) {
                         val embed = attrs?.getValue(
                             "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
                             "embed"
                         ) ?: attrs?.getValue("r:embed") ?: attrs?.getValue("embed")
-                        if (!embed.isNullOrBlank()) shapeRId = embed
+                        if (!embed.isNullOrBlank() && shapeRId == null) shapeRId = embed
                     }
                     "br" -> {
                         flatText.append('\n')
@@ -240,7 +280,10 @@ internal object PptxTextExtractor {
                                     widthEmu = if (shapeW > 0) shapeW else 0,
                                     heightEmu = if (shapeH > 0) shapeH else 0,
                                     text = text,
-                                    bitmap = bmp
+                                    bitmap = bmp,
+                                    fontSizePt = shapeFontSizePt,
+                                    hAlign = shapeHAlign,
+                                    vAlign = shapeVAlign
                                 )
                             }
                         }
