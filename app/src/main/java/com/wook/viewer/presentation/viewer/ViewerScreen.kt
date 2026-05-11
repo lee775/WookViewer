@@ -2,6 +2,7 @@ package com.wook.viewer.presentation.viewer
 
 import android.graphics.Bitmap
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -42,6 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,9 +74,13 @@ import com.wook.viewer.presentation.viewer.components.LimitationsDialog
 import com.wook.viewer.presentation.viewer.components.PasswordPromptDialog
 import com.wook.viewer.presentation.viewer.components.RenderingNoticeBanner
 import com.wook.viewer.presentation.viewer.components.SearchBar
+import com.wook.viewer.presentation.viewer.components.ShareSheet
 import com.wook.viewer.presentation.viewer.components.SheetTabs
 import com.wook.viewer.presentation.viewer.components.TextPageInline
+import com.wook.viewer.presentation.viewer.components.shareOriginalDocument
+import com.wook.viewer.presentation.viewer.components.sharePlainText
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 @Composable
 fun ViewerScreen(
@@ -88,6 +95,7 @@ fun ViewerScreen(
     }
     var showLimitationsDialog by rememberSaveable { mutableStateOf(false) }
     var showBookmarksSheet by rememberSaveable { mutableStateOf(false) }
+    var showShareSheet by rememberSaveable { mutableStateOf(false) }
     // 비밀번호 다이얼로그 — 사용자가 취소를 눌러서 닫았는지 추적해 다시 열리는 걸 막음
     var passwordDialogDismissed by rememberSaveable(state.document?.uri?.toString() ?: "") {
         mutableStateOf(false)
@@ -132,6 +140,7 @@ fun ViewerScreen(
                 doc = state.document,
                 pageCount = state.pageCount,
                 searchSupported = vm.isSearchSupported,
+                shareSupported = state.document != null && state.error == null,
                 bookmarked = state.currentPageBookmarked,
                 bookmarkCount = state.bookmarks.size,
                 showPdfModeToggle = format == DocumentFormat.PDF,
@@ -142,6 +151,7 @@ fun ViewerScreen(
                 iconBg = iconBg,
                 onBack = onBack,
                 onSearch = { vm.setSearchActive(true) },
+                onShare = { showShareSheet = true },
                 onToggleBookmark = vm::toggleCurrentBookmark,
                 onShowBookmarks = { showBookmarksSheet = true },
                 onTogglePdfMode = vm::togglePdfViewMode
@@ -222,6 +232,50 @@ fun ViewerScreen(
             onDismiss = { passwordDialogDismissed = true }
         )
     }
+
+    if (showShareSheet) {
+        val ctx = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val doc = state.document
+        ShareSheet(
+            canShareText = doc != null && vm.isSearchSupported,
+            onShareOriginal = {
+                if (doc != null) {
+                    // 실제 MIME 우선 — content provider가 제공하는 게 가장 정확
+                    val mime = ctx.contentResolver.getType(doc.uri)
+                        ?: doc.format.mimeTypes.firstOrNull()
+                        ?: "application/octet-stream"
+                    shareOriginalDocument(
+                        context = ctx,
+                        uri = doc.uri,
+                        mimeType = mime,
+                        subject = doc.displayName
+                    )
+                }
+            },
+            onSharePageText = {
+                if (doc != null) {
+                    scope.launch {
+                        val text = vm.getPageText(state.currentIndex)?.trim().orEmpty()
+                        if (text.isEmpty()) {
+                            Toast.makeText(
+                                ctx,
+                                ctx.getString(R.string.share_page_text_empty),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            sharePlainText(
+                                context = ctx,
+                                text = text,
+                                subject = doc.displayName
+                            )
+                        }
+                    }
+                }
+            },
+            onDismiss = { showShareSheet = false }
+        )
+    }
 }
 
 @Composable
@@ -229,6 +283,7 @@ private fun ViewerTopBar(
     doc: Document?,
     pageCount: Int,
     searchSupported: Boolean,
+    shareSupported: Boolean,
     bookmarked: Boolean,
     bookmarkCount: Int,
     showPdfModeToggle: Boolean,
@@ -239,6 +294,7 @@ private fun ViewerTopBar(
     iconBg: Color,
     onBack: () -> Unit,
     onSearch: () -> Unit,
+    onShare: () -> Unit,
     onToggleBookmark: () -> Unit,
     onShowBookmarks: () -> Unit,
     onTogglePdfMode: () -> Unit
@@ -288,6 +344,16 @@ private fun ViewerTopBar(
         if (searchSupported) {
             TopBarIconButton(iconBg = iconBg, onClick = onSearch) {
                 Icon(Icons.Filled.Search, contentDescription = "검색", tint = textColor)
+            }
+            Spacer(Modifier.width(4.dp))
+        }
+        if (shareSupported) {
+            TopBarIconButton(iconBg = iconBg, onClick = onShare) {
+                Icon(
+                    Icons.Filled.Share,
+                    contentDescription = stringResource(R.string.action_share),
+                    tint = textColor
+                )
             }
             Spacer(Modifier.width(4.dp))
         }
