@@ -19,7 +19,7 @@ on:
 # 여러 ABI 필요하면 matrix 로 분리 (각각 별도 잡, 동시 실행).
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04  # LO 26-2 가 GCC 12+ 요구 — 22.04(GCC 11) 부족
     timeout-minutes: 360  # 6시간 한도
 
     strategy:
