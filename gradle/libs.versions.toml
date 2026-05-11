@@ -29,8 +29,9 @@ hwpxlib = "1.0.8"
 pdfboxAndroid = "2.0.27.0"
 
 # OOXML 암호 해제 (Office Open XML encrypted documents)
-# 3.17 — 마지막 안정 3.x. hwplib(3.9)과 POIFS API 호환.
-poi = "3.17"
+# 5.2.5 — xmlbeans 5.x 사용으로 2.6.0의 jar 내부 클래스 중복 문제 회피.
+# Java 17 컴파일과 호환. log4j2-api 트랜지티브는 no-op 핸들링 필요할 수 있음.
+poi = "5.2.5"
 
 junit = "4.13.2"
 androidxJunit = "1.2.1"
