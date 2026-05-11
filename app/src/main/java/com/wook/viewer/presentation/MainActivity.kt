@@ -7,15 +7,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.wook.viewer.presentation.filelist.FileListScreen
+import com.wook.viewer.presentation.settings.SettingsScreen
 import com.wook.viewer.presentation.theme.WookViewerTheme
 import com.wook.viewer.presentation.viewer.ViewerScreen
 import dagger.hilt.android.AndroidEntryPoint
@@ -28,7 +32,13 @@ class MainActivity : ComponentActivity() {
         val incoming: Uri? = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.data
 
         setContent {
-            WookViewerTheme {
+            val appVm: AppViewModel = hiltViewModel()
+            val settings by appVm.settings.collectAsState()
+
+            WookViewerTheme(
+                themeMode = settings.themeMode,
+                textScale = settings.textScale
+            ) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     AppNavHost(initialUri = incoming)
                 }
@@ -40,13 +50,14 @@ class MainActivity : ComponentActivity() {
 private object Routes {
     const val LIST = "list"
     const val VIEWER = "viewer?uri={uri}"
+    const val SETTINGS = "settings"
     fun viewer(uri: Uri) = "viewer?uri=${Uri.encode(uri.toString())}"
 }
 
-@androidx.compose.runtime.Composable
+@Composable
 private fun AppNavHost(initialUri: Uri?) {
     val nav = rememberNavController()
-    var consumedInitial by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var consumedInitial by remember { mutableStateOf(false) }
 
     NavHost(navController = nav, startDestination = Routes.LIST) {
         composable(Routes.LIST) {
@@ -56,7 +67,8 @@ private fun AppNavHost(initialUri: Uri?) {
                 nav.navigate(Routes.viewer(initialUri))
             }
             FileListScreen(
-                onOpenDocument = { uri -> nav.navigate(Routes.viewer(uri)) }
+                onOpenDocument = { uri -> nav.navigate(Routes.viewer(uri)) },
+                onOpenSettings = { nav.navigate(Routes.SETTINGS) }
             )
         }
         composable(Routes.VIEWER) { backStack ->
@@ -69,6 +81,9 @@ private fun AppNavHost(initialUri: Uri?) {
                 uri = uri,
                 onBack = { nav.popBackStack() }
             )
+        }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(onBack = { nav.popBackStack() })
         }
     }
 }

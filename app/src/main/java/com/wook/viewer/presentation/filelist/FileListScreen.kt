@@ -22,8 +22,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -55,6 +57,7 @@ import com.wook.viewer.presentation.theme.TextOnDark
 @Composable
 fun FileListScreen(
     onOpenDocument: (Uri) -> Unit,
+    onOpenSettings: () -> Unit,
     vm: FileListViewModel = hiltViewModel()
 ) {
     val state by vm.state.collectAsState()
@@ -83,7 +86,7 @@ fun FileListScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { WookTopBar() },
+        topBar = { WookTopBar(onOpenSettings = onOpenSettings) },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
@@ -133,7 +136,7 @@ fun FileListScreen(
 }
 
 @Composable
-private fun WookTopBar() {
+private fun WookTopBar(onOpenSettings: () -> Unit) {
     val ctx = LocalContext.current
     val buildLabel = remember { BuildInfo.displayLabel(ctx) }
 
@@ -158,7 +161,7 @@ private fun WookTopBar() {
             )
         }
         Spacer(Modifier.width(12.dp))
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "욱뷰어",
                 color = MaterialTheme.colorScheme.onBackground,
@@ -169,6 +172,13 @@ private fun WookTopBar() {
                 text = buildLabel,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp
+            )
+        }
+        IconButton(onClick = onOpenSettings) {
+            Icon(
+                imageVector = Icons.Filled.Settings,
+                contentDescription = stringResource(R.string.action_settings),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

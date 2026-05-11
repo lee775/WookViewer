@@ -6,10 +6,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Density
 import androidx.core.view.WindowCompat
+import com.wook.viewer.domain.model.TextScale
+import com.wook.viewer.domain.model.ThemeMode
 
 private val LightColors = lightColorScheme(
     primary = BrandAccent,
@@ -55,9 +60,16 @@ private val DarkColors = darkColorScheme(
 
 @Composable
 fun WookViewerTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    textScale: TextScale = TextScale.MEDIUM,
     content: @Composable () -> Unit
 ) {
+    val systemDark = isSystemInDarkTheme()
+    val darkTheme = when (themeMode) {
+        ThemeMode.SYSTEM -> systemDark
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
     val colorScheme = if (darkTheme) DarkColors else LightColors
 
     val view = LocalView.current
@@ -69,5 +81,13 @@ fun WookViewerTheme(
         }
     }
 
-    MaterialTheme(colorScheme = colorScheme, content = content)
+    val baseDensity = LocalDensity.current
+    val scaledDensity = Density(
+        density = baseDensity.density,
+        fontScale = baseDensity.fontScale * textScale.multiplier
+    )
+
+    CompositionLocalProvider(LocalDensity provides scaledDensity) {
+        MaterialTheme(colorScheme = colorScheme, content = content)
+    }
 }
