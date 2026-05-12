@@ -56,8 +56,10 @@ class LokAvailability @Inject constructor() {
 
     private companion object {
         /**
-         * LibreOfficeKit.NativeLibLoader.load() 와 동일한 순서.
-         * NSS 트리플(crypto), 그 다음 LO 의존성.
+         * 사전 검증용 — NSS 트리플 + c++_shared 만 로드한다.
+         * lo-native-code.so 는 JNI_OnLoad 에서 LO assets 를 filesDir 에서 찾으므로
+         * unpack 단계 이후에야 안전하게 로드 가능 → LibreOfficeKit 클래스 static block
+         * (LibreOfficeKit.init 호출 시) 에 위임.
          */
         val REQUIRED_LIBS = listOf(
             "nspr4",
@@ -72,8 +74,8 @@ class LokAvailability @Inject constructor() {
             "nssdbm3",
             "smime3",
             "ssl3",
-            "c++_shared",
-            "lo-native-code"
+            "c++_shared"
+            // "lo-native-code" 는 의도적으로 제외 — LokSession 이 unpack 후 로드.
         )
     }
 }

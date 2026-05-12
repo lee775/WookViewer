@@ -87,9 +87,24 @@ class LokSession @Inject constructor(
                     return@withLock
                 }
 
+                // unpack 완료 후에야 lo-native-code 안전 로드. JNI_OnLoad 가 filesDir 의
+                // services.rdb 등을 참조할 수 있음.
+                val loLibLoaded = runCatching { System.loadLibrary("lo-native-code"); true }
+                    .getOrElse { e ->
+                        Timber.e(e, "lo-native-code.so 로드 실패")
+                        false
+                    }
+                if (!loLibLoaded) {
+                    _state.value = State.Unavailable
+                    return@withLock
+                }
+
                 val ok = runCatching {
                     // LibreOfficeKit.init 은 내부적으로 main thread 의존성 없음 (assets 읽기 등).
                     // 그러나 첫 호출이 무겁기 때문에 IO dispatcher 에서 실행.
+                    // 이 시점에 LibreOfficeKit 클래스가 처음 참조되어 static block 의
+                    // NativeLibLoader.load() 가 실행되지만, lo-native-code 는 이미 위에서
+                    // 로드돼 있어 idempotent no-op.
                     LibreOfficeKit.init(activity)
                     val handle = LibreOfficeKit.getLibreOfficeKitHandle()
                     requireNotNull(handle) { "LibreOfficeKit handle is null after init" }
