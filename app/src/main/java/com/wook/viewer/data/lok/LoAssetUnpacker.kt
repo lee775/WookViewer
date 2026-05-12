@@ -26,10 +26,14 @@ internal object LoAssetUnpacker {
      * @return true 면 unpack 성공 또는 이미 완료된 상태. false 면 실패 (LO init 시도 무의미).
      */
     fun ensureUnpacked(context: Context): Boolean {
-        val filesDir = context.filesDir
-        val marker = File(filesDir, MARKER_FILE)
+        // LO 공식 LibreOfficeMainActivity.updatePreferences 와 동일하게
+        // applicationInfo.dataDir (/data/data/<package>) 에 직접 풀어야 한다.
+        // filesDir(/data/data/<package>/files) 에 풀면 LO native 가 services.rdb
+        // 를 못 찾아 SIGSEGV.
+        val dataDir = File(context.applicationInfo.dataDir)
+        val marker = File(dataDir, MARKER_FILE)
         if (marker.exists()) {
-            Timber.d("LO assets 이미 unpack 됨")
+            Timber.d("LO assets 이미 unpack 됨: $dataDir")
             return true
         }
 
@@ -40,13 +44,13 @@ internal object LoAssetUnpacker {
             return false
         }
 
-        Timber.i("LO assets unpack 시작: ${topLevel.size} top-level entries → $filesDir")
+        Timber.i("LO assets unpack 시작: ${topLevel.size} top-level entries → $dataDir")
         topLevel.forEach { Timber.d("  - $it") }
         return runCatching {
             var fileCount = 0
             for (entry in topLevel) {
                 val rootPath = "$SOURCE_ROOT/$entry"
-                fileCount += extractTree(am, rootPath, File(filesDir, entry))
+                fileCount += extractTree(am, rootPath, File(dataDir, entry))
             }
             marker.writeText(System.currentTimeMillis().toString())
             Timber.i("LO assets unpack 완료: 총 $fileCount 개 파일")
