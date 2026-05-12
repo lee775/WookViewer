@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(rm -rf apk-output/*)",
-      "Bash(gh run *)"
+      "Bash(gh run *)",
+      "Bash(mv apk-output/WookViewer-v0.8.1-with-assets/WookViewer-v0.8.1-debug/WookViewer-v0.8.1-debug.apk /tmp/keep.apk)",
+      "Bash(mkdir -p apk-output)",
+      "Bash(mv /tmp/keep.apk apk-output/WookViewer-v0.8.1-debug.apk)"
     ]
   }
 }

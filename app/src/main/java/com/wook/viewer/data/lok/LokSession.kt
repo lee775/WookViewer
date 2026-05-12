@@ -74,6 +74,19 @@ class LokSession @Inject constructor(
                     return@withLock
                 }
 
+                // LO native가 init 시점에 filesDir에서 찾는 파일들(services.rdb 등)을
+                // assets/unpack/ → filesDir 로 복사. 이 단계 빼면 init 시 SIGSEGV.
+                val unpacked = runCatching { LoAssetUnpacker.ensureUnpacked(activity) }
+                    .getOrElse { e ->
+                        Timber.e(e, "LO assets unpack 예외")
+                        false
+                    }
+                if (!unpacked) {
+                    Timber.w("LO assets unpack 실패 — init 시도 중단")
+                    _state.value = State.Unavailable
+                    return@withLock
+                }
+
                 val ok = runCatching {
                     // LibreOfficeKit.init 은 내부적으로 main thread 의존성 없음 (assets 읽기 등).
                     // 그러나 첫 호출이 무겁기 때문에 IO dispatcher 에서 실행.

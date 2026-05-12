@@ -9,6 +9,10 @@ import timber.log.Timber
 class WookViewerApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        // 크래시 발생 시 stack trace 를 외부 파일로 저장 (logcat 대체)
+        // /storage/emulated/0/Android/data/com.wook.viewer/files/crashes/
+        CrashLogger.install(this)
+
         if (BuildConfigFlag.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
