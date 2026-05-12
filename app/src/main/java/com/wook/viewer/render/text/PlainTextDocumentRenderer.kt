@@ -95,6 +95,7 @@ class PlainTextDocumentRenderer @Inject constructor(
 
     private fun readBestEffort(input: InputStream): Pair<String, String> {
         val bytes = input.readBytes()
+        Timber.d("text: ${bytes.size} bytes read")
 
         // BOM 검사
         when {
@@ -107,18 +108,48 @@ class PlainTextDocumentRenderer @Inject constructor(
                 return String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE) to "UTF-16 BE (BOM)"
         }
 
-        // UTF-8 strict 시도 — 잘못된 바이트면 throw
-        decodeStrict(bytes, StandardCharsets.UTF_8)?.let { return it to "UTF-8" }
+        // UTF-8 strict 시도
+        decodeStrict(bytes, StandardCharsets.UTF_8)?.let {
+            Timber.d("text decoded as UTF-8")
+            return it to "UTF-8"
+        }
 
-        // 한국어 Windows 텍스트 파일 — EUC-KR / CP949 fallback
-        val koreanCharsets = listOf("EUC-KR", "x-windows-949", "CP949", "MS949")
+        // 한국어 인코딩 폴백 — Android 가용 charset 더 넓게.
+        // CP949 가 EUC-KR superset (한글 완성형 + 확장)이라 보통 CP949 먼저 시도 권장.
+        val koreanCharsets = listOf(
+            "x-windows-949",   // Android 표준 alias
+            "MS949",
+            "CP949",
+            "IBM949",
+            "EUC-KR",
+            "KS_C_5601-1987",  // EUC-KR alias
+            "x-EUC-KR"
+        )
         for (name in koreanCharsets) {
-            runCatching { Charset.forName(name) }.getOrNull()?.let { cs ->
-                decodeStrict(bytes, cs)?.let { return it to cs.name() }
+            val cs = runCatching { Charset.forName(name) }.getOrNull() ?: continue
+            decodeStrict(bytes, cs)?.let {
+                Timber.i("text decoded as $name (alias: ${cs.name()})")
+                return it to cs.name()
+            }
+        }
+        Timber.w("text: no strict Korean charset matched — trying lenient")
+
+        // 가용 charset 들 strict 모두 실패 → CP949/EUC-KR 으로 replace 모드 시도
+        // (일부 글자가 ? 로 치환돼도 한글 본문은 살려둠)
+        for (name in koreanCharsets) {
+            val cs = runCatching { Charset.forName(name) }.getOrNull() ?: continue
+            runCatching {
+                val decoder = cs.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPLACE)
+                    .onUnmappableCharacter(CodingErrorAction.REPLACE)
+                val s = decoder.decode(ByteBuffer.wrap(bytes)).toString()
+                Timber.i("text decoded as $name (lenient)")
+                return s to "$name (lenient)"
             }
         }
 
-        // 최후 수단 — ISO-8859-1은 모든 바이트 시퀀스에 대해 성공 (단 한글은 깨짐)
+        // 마지막 수단
+        Timber.w("text: falling back to ISO-8859-1 (한글 깨짐 가능)")
         return String(bytes, Charsets.ISO_8859_1) to "ISO-8859-1 (fallback)"
     }
 

@@ -296,10 +296,16 @@ class LokDocumentRenderer @Inject constructor(
     }
 }
 
-/** LOK 라우팅 대상 포맷 — RendererRegistryImpl 이 활성화 조건과 함께 사용. */
+/**
+ * LOK 라우팅 대상 포맷 — RendererRegistryImpl 이 활성화 조건과 함께 사용.
+ *
+ * HWP 제외 이유: 우리 enum 은 .hwp 와 .hwpx 를 한 묶음으로 본다.
+ *   - LO 는 HWP 5.0 만 (hwpfilter 모듈) 지원, HWPX 미지원.
+ *   - .hwpx 가 LOK 로 라우팅되면 깨짐.
+ *   - 안전하게 기존 hwplib/hwpxlib 경로 유지.
+ */
 val LOK_SUPPORTED_FORMATS: Set<DocumentFormat> = setOf(
     DocumentFormat.DOCX,
     DocumentFormat.PPTX,
-    DocumentFormat.XLSX,
-    DocumentFormat.HWP
+    DocumentFormat.XLSX
 )
