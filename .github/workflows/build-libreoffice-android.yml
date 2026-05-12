@@ -135,6 +135,9 @@ jobs:
           # --enable-ccache 로 컴파일 캐시 활용 (재시도 시 결정적 가속)
           export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          # Android 15+ 가 16KB 페이지 정렬 요구 — NDK r27 기본은 4KB 라
+          # 명시적으로 max-page-size=16384 + common-page-size=16384 강제
+          export LDFLAGS="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 ${LDFLAGS:-}"
           ./autogen.sh \
             --with-distro="$DISTRO" \
             --with-android-ndk="$ANDROID_NDK_HOME" \
