@@ -7,7 +7,7 @@ import java.io.File
 
 /**
  * LibreOffice 가 init 시점에 filesDir 에서 찾는 데이터 파일들 (services.rdb,
- * types/*.rdb, registry/*, 폰트 등) 을 APK assets/unpack/ 에서 추출.
+ * `types/` 아래 *.rdb, `registry/` 아래 설정, 폰트 등)을 APK `assets/unpack/` 에서 추출.
  *
  * LO Android 배포본은 LibreOfficeMainActivity 가 시작 시 한 번 이 step 을 수행.
  * 우리는 자체 Activity 구조라 따로 호출해야 한다.
