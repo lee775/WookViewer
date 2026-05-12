@@ -13,6 +13,9 @@ import com.wook.viewer.domain.repository.DocumentHandle
 import com.wook.viewer.domain.repository.DocumentRenderer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -50,6 +53,20 @@ class LokDocumentRenderer @Inject constructor(
 ) : DocumentRenderer {
 
     override val supportedFormats: Set<DocumentFormat> = emptySet()
+
+    /**
+     * 편집 등으로 인해 비트맵 캐시가 무효화될 때 emit.
+     * UI 는 이 값을 BitmapItem 의 key 에 추가해 강제 재구성/재렌더.
+     */
+    private val _invalidations = MutableSharedFlow<Long>(
+        replay = 0,
+        extraBufferCapacity = 8
+    )
+    val invalidations: SharedFlow<Long> = _invalidations.asSharedFlow()
+
+    private fun emitInvalidation() {
+        _invalidations.tryEmit(System.nanoTime())
+    }
 
     private class Handle(
         override val uri: Uri,
@@ -112,12 +129,106 @@ class LokDocumentRenderer @Inject constructor(
             runCatching { document.initializeForRendering() }
                 .onFailure { Timber.w(it, "initializeForRendering 실패 — 일부 렌더 결함 가능") }
 
+            // tile 무효화 callback — 편집으로 화면이 변할 때 캐시 비우고 UI 알림
+            runCatching {
+                document.setMessageCallback { signalNumber, payload ->
+                    if (signalNumber == Document.CALLBACK_INVALIDATE_TILES) {
+                        Timber.v("LOK invalidate-tiles payload=$payload")
+                        // 전체 캐시 비우는 단순 전략 — 정확도 우선, 성능은 차후 최적화
+                        // (callback 은 LOK 스레드에서 호출되므로 mutex 없이 evictAll 안전하지 않을 수
+                        // 있음 → 이벤트만 emit 하고 실제 evict 는 main coroutine 에서 처리)
+                        emitInvalidation()
+                    }
+                }
+            }.onFailure { Timber.w(it, "setMessageCallback 실패 — 편집 후 재렌더 안 될 수 있음") }
+
             val docType = runCatching { document.documentType }.getOrDefault(Document.DOCTYPE_OTHER)
             val partCount = runCatching { document.parts.coerceAtLeast(1) }.getOrDefault(1)
             Timber.i("LOK 문서 열기: type=$docType, parts=$partCount, file=${tempFile.name}")
 
             Handle(uri, document, tempFile, docType, partCount)
         }
+
+    /** 모든 캐시된 비트맵 무효화. tile invalidation 시 VM 이 호출. */
+    suspend fun invalidateAll(handle: DocumentHandle) {
+        val h = handle as Handle
+        withContext(Dispatchers.IO) {
+            h.mutex.withLock { h.bitmapCache.evictAll() }
+        }
+    }
+
+    /**
+     * 화면 좌표 (xPx, yPx) → LOK twips 변환 후 mouse down+up 이벤트 발생.
+     * 편집 모드에서 사용자가 화면 탭한 위치에 LOK 커서를 놓을 때 사용.
+     */
+    suspend fun postMouseTap(
+        handle: DocumentHandle,
+        pageIndex: Int,
+        xPx: Int,
+        yPx: Int,
+        widthPx: Int,
+        heightPx: Int
+    ): Boolean {
+        if (widthPx <= 0 || heightPx <= 0) return false
+        val h = handle as Handle
+        return withContext(Dispatchers.IO) {
+            h.mutex.withLock {
+                runCatching {
+                    if (h.partCount > 1) h.document.setPart(pageIndex.coerceIn(0, h.partCount - 1))
+                    val docW = h.document.documentWidth.toInt()
+                    val docH = h.document.documentHeight.toInt()
+                    if (docW <= 0 || docH <= 0) return@runCatching false
+                    val xTwips = (xPx.toLong() * docW / widthPx).toInt()
+                    val yTwips = (yPx.toLong() * docH / heightPx).toInt()
+                    h.document.postMouseEvent(
+                        Document.MOUSE_EVENT_BUTTON_DOWN,
+                        xTwips, yTwips, 1,
+                        Document.MOUSE_BUTTON_LEFT, 0
+                    )
+                    h.document.postMouseEvent(
+                        Document.MOUSE_EVENT_BUTTON_UP,
+                        xTwips, yTwips, 1,
+                        Document.MOUSE_BUTTON_LEFT, 0
+                    )
+                    true
+                }.onFailure { Timber.w(it, "postMouseTap 실패") }.getOrDefault(false)
+            }
+        }
+    }
+
+    /**
+     * LOK 에 키 이벤트 전송 (press + release 쌍).
+     * @param charCode 유니코드 코드 포인트 (ASCII/UTF-16 단위)
+     * @param lokKeyCode LOK 특수키 코드 (Backspace=1283, Return=1280 등). 0=일반 문자.
+     */
+    suspend fun postKey(
+        handle: DocumentHandle,
+        charCode: Int,
+        lokKeyCode: Int = 0
+    ): Boolean {
+        val h = handle as Handle
+        return withContext(Dispatchers.IO) {
+            h.mutex.withLock {
+                runCatching {
+                    h.document.postKeyEvent(Document.KEY_EVENT_PRESS, charCode, lokKeyCode)
+                    h.document.postKeyEvent(Document.KEY_EVENT_RELEASE, charCode, lokKeyCode)
+                    true
+                }.onFailure { Timber.w(it, "postKey 실패 char=$charCode lok=$lokKeyCode") }
+                    .getOrDefault(false)
+            }
+        }
+    }
+
+    /**
+     * 현재 열린 문서를 원본 임시 파일에 덮어쓰기.
+     * LOK 가 saveAs 만 제공 → tempFile 경로에 원본 포맷으로 저장 → UI 가 SAF 로 복사.
+     * @param lokFormat 원본 포맷 단축명. Office 편집 저장은 보통 원본 포맷 그대로.
+     */
+    suspend fun saveCurrentDocument(
+        handle: DocumentHandle,
+        outFile: File,
+        lokFormat: String
+    ): Boolean = saveAs(handle, outFile, lokFormat)
 
     override suspend fun pageCount(handle: DocumentHandle): Int {
         val h = handle as Handle

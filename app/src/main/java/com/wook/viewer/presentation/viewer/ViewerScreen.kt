@@ -82,6 +82,7 @@ import com.wook.viewer.presentation.viewer.components.EditTopBar
 import com.wook.viewer.presentation.viewer.components.EditableTextPage
 import com.wook.viewer.presentation.viewer.components.ExportFormatDialog
 import com.wook.viewer.presentation.viewer.components.ExportOption
+import com.wook.viewer.presentation.viewer.components.OfficeEditOverlay
 import com.wook.viewer.presentation.viewer.components.LimitationsDialog
 import com.wook.viewer.presentation.viewer.components.OutlineSheet
 import com.wook.viewer.presentation.viewer.components.PasswordPromptDialog
@@ -158,9 +159,17 @@ fun ViewerScreen(
         }
     }
 
+    // Office 편집 "다른 이름으로 저장" 런처 — 원본 포맷 그대로
+    val officeSaveAsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { newUri: Uri? ->
+        if (newUri != null) vm.saveOfficeEditsAs(newUri)
+    }
+
     // 편집 모드 중 시스템 백 → 화면 종료가 아닌 편집 취소로
-    BackHandler(enabled = state.editMode && !state.saving) {
-        vm.exitEditMode(discardChanges = true)
+    BackHandler(enabled = (state.editMode || state.officeEditMode) && !state.saving) {
+        if (state.officeEditMode) vm.exitOfficeEditMode()
+        else vm.exitEditMode(discardChanges = true)
     }
 
     // 저장 결과 Toast — Success/Failure 모두 표시 후 clear
@@ -195,6 +204,18 @@ fun ViewerScreen(
             .background(bgColor)
     ) {
         when {
+            state.officeEditMode -> EditTopBar(
+                documentName = state.document?.displayName ?: stringResource(R.string.title_viewer),
+                saving = state.saving,
+                onCancel = vm::exitOfficeEditMode,
+                onSave = vm::saveOfficeEdits,
+                onSaveAs = {
+                    // 원본 포맷 그대로 다른 이름으로
+                    officeSaveAsLauncher.launch(
+                        state.document?.displayName ?: "document"
+                    )
+                }
+            )
             state.editMode -> EditTopBar(
                 documentName = state.document?.displayName ?: stringResource(R.string.title_viewer),
                 saving = state.saving,
@@ -227,7 +248,7 @@ fun ViewerScreen(
                 bookmarkCount = state.bookmarks.size,
                 showPdfModeToggle = format == DocumentFormat.PDF,
                 pdfInTextMode = isPdfTextMode,
-                showEditToggle = vm.isEditableFormat() && state.error == null,
+                showEditToggle = (vm.isEditableFormat() || vm.canEditOffice()) && state.error == null,
                 showExportToggle = vm.canExportOffice() && state.error == null,
                 barColor = barColor,
                 textColor = textColor,
@@ -241,7 +262,10 @@ fun ViewerScreen(
                 onToggleBookmark = vm::toggleCurrentBookmark,
                 onShowBookmarks = { showBookmarksSheet = true },
                 onTogglePdfMode = vm::togglePdfViewMode,
-                onEnterEdit = vm::enterEditMode,
+                onEnterEdit = {
+                    if (vm.canEditOffice()) vm.enterOfficeEditMode()
+                    else vm.enterEditMode()
+                },
                 onExport = { showExportDialog = true }
             )
         }
@@ -299,7 +323,12 @@ fun ViewerScreen(
                     loadElements = vm::getPageElements,
                     matchesForPage = vm::matchesForPage,
                     activeMatchRange = vm::activeMatchRange,
-                    pageBgColor = bgColor
+                    pageBgColor = bgColor,
+                    invalidationTick = state.invalidationTick,
+                    officeEditMode = state.officeEditMode,
+                    onOfficeTap = vm::postOfficeTap,
+                    onOfficeChar = vm::postOfficeChar,
+                    onOfficeSpecialKey = vm::postOfficeSpecialKey
                 )
             }
         }
@@ -576,7 +605,12 @@ private fun PageContent(
     loadElements: suspend (index: Int) -> List<PageElement>?,
     matchesForPage: (Int) -> List<IntRange>,
     activeMatchRange: (Int) -> IntRange?,
-    pageBgColor: Color
+    pageBgColor: Color,
+    invalidationTick: Long,
+    officeEditMode: Boolean,
+    onOfficeTap: (pageIndex: Int, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit,
+    onOfficeChar: (codePoint: Int) -> Unit,
+    onOfficeSpecialKey: (lokKeyCode: Int) -> Unit
 ) {
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = currentIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
@@ -620,7 +654,15 @@ private fun PageContent(
                     activeMatch = activeMatchRange(pageIndex)
                 )
             } else {
-                BitmapItem(pageIndex = pageIndex, loadBitmap = loadBitmap)
+                BitmapItem(
+                    pageIndex = pageIndex,
+                    loadBitmap = loadBitmap,
+                    invalidationTick = invalidationTick,
+                    officeEditMode = officeEditMode,
+                    onTap = { x, y, w, h -> onOfficeTap(pageIndex, x, y, w, h) },
+                    onChar = onOfficeChar,
+                    onSpecialKey = onOfficeSpecialKey
+                )
             }
         }
         item("bottom_spacer") {
@@ -632,15 +674,31 @@ private fun PageContent(
 @Composable
 private fun BitmapItem(
     pageIndex: Int,
-    loadBitmap: suspend (index: Int, widthPx: Int) -> Bitmap?
+    loadBitmap: suspend (index: Int, widthPx: Int) -> Bitmap?,
+    invalidationTick: Long,
+    officeEditMode: Boolean,
+    onTap: (xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit,
+    onChar: (codePoint: Int) -> Unit,
+    onSpecialKey: (lokKeyCode: Int) -> Unit
 ) {
     var widthPx by remember(pageIndex) { mutableIntStateOf(0) }
     var bitmap by remember(pageIndex) { mutableStateOf<Bitmap?>(null) }
 
-    LaunchedEffect(pageIndex, widthPx) {
+    LaunchedEffect(pageIndex, widthPx, invalidationTick) {
         if (widthPx > 0) bitmap = loadBitmap(pageIndex, widthPx)
     }
-    BitmapPageInline(bitmap = bitmap, onWidthChanged = { widthPx = it })
+    Box(modifier = Modifier.fillMaxWidth()) {
+        BitmapPageInline(bitmap = bitmap, onWidthChanged = { widthPx = it })
+        if (officeEditMode) {
+            OfficeEditOverlay(
+                pageIndex = pageIndex,
+                onTap = onTap,
+                onChar = onChar,
+                onSpecialKey = onSpecialKey,
+                modifier = Modifier.matchParentSize()
+            )
+        }
+    }
 }
 
 @Composable

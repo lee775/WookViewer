@@ -72,6 +72,13 @@ data class ViewerUiState(
     val editMode: Boolean = false,
     /** 편집 중인 텍스트 (편집 모드 진입 시 첫 페이지 텍스트로 초기화). */
     val editedText: String = "",
+    /**
+     * Office 편집 모드 — DOCX/PPTX/XLSX 에서 LOK 기반 직접 편집.
+     * UI 가 [OfficeEditOverlay] 를 활성화하고 키/탭 이벤트를 VM 으로 전달.
+     */
+    val officeEditMode: Boolean = false,
+    /** Office 편집 시 tile 무효화 카운터 — 증가 시 BitmapItem 강제 재렌더. */
+    val invalidationTick: Long = 0L,
     /** 저장 진행 상태. */
     val saving: Boolean = false,
     /** 저장 결과 메시지 (Snackbar 등). */
@@ -189,7 +196,7 @@ class ViewerViewModel @Inject constructor(
                 val labels = r.getSectionLabels(h)
                 val outline = r.getOutline(h)
                 // LOK 렌더러는 모든 포맷을 비트맵으로 그림 — ViewerScreen 분기 강제
-                val useBitmap = r::class.simpleName == "LokDocumentRenderer"
+                val useBitmap = r is LokDocumentRenderer
                 _state.update {
                     it.copy(
                         loading = false,
@@ -199,6 +206,16 @@ class ViewerViewModel @Inject constructor(
                         sectionLabels = labels,
                         outline = outline
                     )
+                }
+                // LOK 일 때 tile invalidation 구독 — 편집 후 자동 재렌더
+                if (r is LokDocumentRenderer) {
+                    viewModelScope.launch {
+                        r.invalidations.collect { tick ->
+                            // 캐시 비우고 UI tick 증가 → BitmapItem 재구성
+                            runCatching { r.invalidateAll(h) }
+                            _state.update { it.copy(invalidationTick = tick) }
+                        }
+                    }
                 }
                 observeBookmarks(doc.uri.toString())
                 refreshCurrentPageBookmark()
@@ -517,6 +534,127 @@ class ViewerViewModel @Inject constructor(
     fun canExportOffice(): Boolean {
         val fmt = _state.value.document?.format ?: return false
         return fmt in LOK_SUPPORTED_FORMATS && renderer is LokDocumentRenderer
+    }
+
+    /** 원본 포맷의 LOK 단축명. saveCurrentDocument 호출에 사용. */
+    private fun currentLokFormat(): String? = when (_state.value.document?.format) {
+        DocumentFormat.DOCX -> "docx"
+        DocumentFormat.PPTX -> "pptx"
+        DocumentFormat.XLSX -> "xlsx"
+        else -> null
+    }
+
+    // ---- Office 직접 편집 (LOK postKey/postMouse) ----
+
+    /** Office 직접 편집 진입 가능 — LOK 활성화된 Office 파일만. */
+    fun canEditOffice(): Boolean = canExportOffice()
+
+    fun enterOfficeEditMode() {
+        if (!canEditOffice()) return
+        _state.update { it.copy(officeEditMode = true) }
+    }
+
+    fun exitOfficeEditMode() {
+        _state.update { it.copy(officeEditMode = false) }
+    }
+
+    /**
+     * 화면 좌표 (xPx, yPx) → LOK 커서 위치.
+     * BitmapItem 이 측정된 widthPx/heightPx 와 함께 호출.
+     */
+    fun postOfficeTap(pageIndex: Int, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+        val r = renderer as? LokDocumentRenderer ?: return
+        val h = handle ?: return
+        viewModelScope.launch {
+            r.postMouseTap(h, pageIndex, xPx, yPx, widthPx, heightPx)
+        }
+    }
+
+    /** ASCII/유니코드 문자 입력. lokKeyCode=0 (일반 문자). */
+    fun postOfficeChar(charCode: Int) {
+        val r = renderer as? LokDocumentRenderer ?: return
+        val h = handle ?: return
+        viewModelScope.launch { r.postKey(h, charCode, 0) }
+    }
+
+    /** 특수키 입력 (Backspace=1283, Return=1280, Tab=1282, Delete=1286 등). */
+    fun postOfficeSpecialKey(lokKeyCode: Int) {
+        val r = renderer as? LokDocumentRenderer ?: return
+        val h = handle ?: return
+        viewModelScope.launch { r.postKey(h, 0, lokKeyCode) }
+    }
+
+    /** 현재 문서를 원본 URI 에 저장 (overwrite). LOK 가 임시 파일에 저장 후 SAF 복사. */
+    fun saveOfficeEdits() {
+        val s = _state.value
+        val r = renderer as? LokDocumentRenderer ?: return
+        val h = handle ?: return
+        val uri = s.document?.uri ?: return
+        val fmt = currentLokFormat() ?: return
+        _state.update { it.copy(saving = true, saveResult = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                val tmp = File.createTempFile("save_", ".$fmt", appContext.cacheDir)
+                try {
+                    if (!r.saveCurrentDocument(h, tmp, fmt)) {
+                        throw IOException("LOK saveAs returned false")
+                    }
+                    appContext.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                        tmp.inputStream().use { it.copyTo(out) }
+                    } ?: throw IOException("openOutputStream returned null for $uri")
+                } finally {
+                    runCatching { tmp.delete() }
+                }
+            }
+            _state.update {
+                it.copy(
+                    saving = false,
+                    saveResult = result.fold(
+                        onSuccess = { SaveResult.Success("저장 완료") },
+                        onFailure = { e -> SaveResult.Failure("저장 실패: ${e.message ?: e.javaClass.simpleName}") }
+                    )
+                )
+            }
+            if (result.isSuccess) {
+                _state.update { it.copy(officeEditMode = false) }
+            }
+        }
+    }
+
+    /** 현재 문서를 새 URI 에 같은 포맷으로 저장 (다른 이름으로 저장). */
+    fun saveOfficeEditsAs(newUri: Uri) {
+        val r = renderer as? LokDocumentRenderer ?: return
+        val h = handle ?: return
+        val fmt = currentLokFormat() ?: return
+        _state.update { it.copy(saving = true, saveResult = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                val tmp = File.createTempFile("save_", ".$fmt", appContext.cacheDir)
+                try {
+                    if (!r.saveCurrentDocument(h, tmp, fmt)) {
+                        throw IOException("LOK saveAs returned false")
+                    }
+                    appContext.contentResolver.openOutputStream(newUri, "wt")?.use { out ->
+                        tmp.inputStream().use { it.copyTo(out) }
+                    } ?: throw IOException("openOutputStream returned null for $newUri")
+                } finally {
+                    runCatching { tmp.delete() }
+                }
+            }
+            _state.update {
+                it.copy(
+                    saving = false,
+                    saveResult = result.fold(
+                        onSuccess = { SaveResult.Success("다른 이름으로 저장 완료") },
+                        onFailure = { e -> SaveResult.Failure("저장 실패: ${e.message ?: e.javaClass.simpleName}") }
+                    )
+                )
+            }
+            if (result.isSuccess) {
+                _state.update { it.copy(officeEditMode = false) }
+                load(newUri)
+            }
+        }
     }
 
     /**
