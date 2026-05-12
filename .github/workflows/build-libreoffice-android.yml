@@ -173,7 +173,6 @@ jobs:
         working-directory: ${{ env.LO_SRC }}
         run: |
           # make 단계가 부분 실패해도 .so 가 만들어졌으면 픽업.
-          # 모든 .so 후보 위치 출력 (디버깅용)
           echo "== All .so files in LO build tree =="
           find . -name "*.so" -type f 2>/dev/null | head -30 || true
           echo "== Looking for liblo-native-code.so =="
@@ -184,7 +183,6 @@ jobs:
           fi
           echo "Found: $ARTIFACT"
           ls -lah "$ARTIFACT"
-          # 동봉되어야 할 다른 NSS/c++_shared libs 들도 찾기
           mkdir -p "$GITHUB_WORKSPACE/jniLibs/${{ matrix.abi }}"
           cp "$ARTIFACT" "$GITHUB_WORKSPACE/jniLibs/${{ matrix.abi }}/"
           # 보조 라이브러리 함께 수집 (NSS 트리플 등 — LibreOfficeKit.java NativeLibLoader 기준)
@@ -197,6 +195,72 @@ jobs:
             fi
           done
           ls -lah "$GITHUB_WORKSPACE/jniLibs/${{ matrix.abi }}/"
+
+      - name: Collect LO assets (services.rdb, types, registry, bootstrap)
+        working-directory: ${{ env.LO_SRC }}
+        run: |
+          # LO 가 LibreOfficeKit.init 시점에 APK assets/program/ 에서 읽는 파일들 수집.
+          # 이게 없으면 LOK init이 native에서 죽음.
+          ASSETS_OUT="$GITHUB_WORKSPACE/lo-assets"
+          mkdir -p "$ASSETS_OUT/program" "$ASSETS_OUT/share"
+
+          echo "== Looking for LO Android assets staging dir =="
+          # LO Android 빌드는 보통 android/source/assets/ 에 필요한 파일을 stage 함
+          STAGING="$LO_SRC/android/source/assets"
+          if [ -d "$STAGING" ]; then
+            echo "Found staging at $STAGING"
+            ls -lah "$STAGING" | head -20
+            cp -r "$STAGING"/* "$ASSETS_OUT/" 2>/dev/null || true
+          fi
+
+          # instdir 에서도 핵심 파일 복사 (fallback / 보완)
+          INSTDIR="$LO_SRC/instdir"
+          if [ -d "$INSTDIR" ]; then
+            echo "Found instdir at $INSTDIR"
+            # 부팅에 필요한 핵심 파일들
+            for f in services.rdb services/services.rdb fundamentalrc bootstraprc unorc; do
+              SRC=$(find "$INSTDIR/program" -name "$(basename $f)" -type f 2>/dev/null | head -1)
+              if [ -n "$SRC" ]; then
+                cp "$SRC" "$ASSETS_OUT/program/" && echo "+ $(basename $f)"
+              fi
+            done
+            # types/*.rdb
+            if [ -d "$INSTDIR/program/types" ]; then
+              cp -r "$INSTDIR/program/types" "$ASSETS_OUT/program/" && echo "+ types/"
+            fi
+            # registry data
+            if [ -d "$INSTDIR/share/registry" ]; then
+              cp -r "$INSTDIR/share/registry" "$ASSETS_OUT/share/" && echo "+ share/registry/"
+            fi
+          fi
+
+          # LO 가 만든 APK가 있으면 거기서 assets 추출 (가장 정확)
+          LO_APK=$(find "$LO_SRC/android/source/build/outputs/apk" -name "*.apk" 2>/dev/null | head -1)
+          if [ -n "$LO_APK" ]; then
+            echo "== Extracting from LO APK: $LO_APK =="
+            mkdir -p /tmp/lo-apk-x
+            unzip -o "$LO_APK" "assets/*" -d /tmp/lo-apk-x 2>&1 | tail -5
+            if [ -d /tmp/lo-apk-x/assets ]; then
+              # APK 내용이 가장 신뢰할 만하니 이걸로 덮어씀
+              rm -rf "$ASSETS_OUT"/*
+              cp -r /tmp/lo-apk-x/assets/* "$ASSETS_OUT/"
+              echo "Replaced with APK extracted assets"
+            fi
+          fi
+
+          echo "== Final asset structure =="
+          du -sh "$ASSETS_OUT" || true
+          find "$ASSETS_OUT" -maxdepth 3 -type d | head -20
+          find "$ASSETS_OUT" -type f | wc -l
+
+      - name: Upload LO assets artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libreoffice-android-assets-${{ inputs.lo_branch }}
+          path: lo-assets/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

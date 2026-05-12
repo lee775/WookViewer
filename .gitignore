@@ -20,3 +20,5 @@ local.properties
 
 # LibreOffice native libs — 별도 워크플로 산출물 (~100MB), git에 포함 안 함
 /app/src/main/jniLibs/
+# LibreOffice assets (services.rdb, types, registry) — 같이 별도 산출
+/app/src/main/assets/

@@ -26,21 +26,36 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Download LibreOffice native libs (옵션)
+      - name: Download LibreOffice native libs + assets (옵션)
         if: ${{ inputs.include_lo_native == true }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p app/src/main/jniLibs/arm64-v8a
+          mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/assets
           # LO build artifact 다운로드 — 같은 repo의 별도 워크플로 산출물
-          gh run download "${{ inputs.lo_run_id }}" -D /tmp/lo-native -R "${{ github.repository }}"
-          # artifact 이름이 'libreoffice-android-arm64-v8a-<branch>' 형태
-          ARTIFACT_DIR=$(find /tmp/lo-native -maxdepth 1 -mindepth 1 -type d | head -1)
-          echo "Artifact dir: $ARTIFACT_DIR"
-          ls -lah "$ARTIFACT_DIR"
-          cp "$ARTIFACT_DIR"/*.so app/src/main/jniLibs/arm64-v8a/
-          echo "=== jniLibs ==="
-          ls -lah app/src/main/jniLibs/arm64-v8a/
+          gh run download "${{ inputs.lo_run_id }}" -D /tmp/lo-bundle -R "${{ github.repository }}"
+          ls -la /tmp/lo-bundle/
+
+          # 1. .so files
+          SO_DIR=$(find /tmp/lo-bundle -maxdepth 2 -name "libreoffice-android-arm64-v8a-*" -type d | head -1)
+          if [ -n "$SO_DIR" ]; then
+            echo "=== Native libs: $SO_DIR ==="
+            cp "$SO_DIR"/*.so app/src/main/jniLibs/arm64-v8a/
+            ls -lah app/src/main/jniLibs/arm64-v8a/
+          else
+            echo "::warning::LO native libs artifact 못 찾음"
+          fi
+
+          # 2. assets (services.rdb, types, registry 등) — LOK init 에 필수
+          ASSETS_DIR=$(find /tmp/lo-bundle -maxdepth 2 -name "libreoffice-android-assets-*" -type d | head -1)
+          if [ -n "$ASSETS_DIR" ]; then
+            echo "=== LO assets: $ASSETS_DIR ==="
+            cp -r "$ASSETS_DIR"/* app/src/main/assets/
+            find app/src/main/assets -maxdepth 3 -type d | head -10
+            du -sh app/src/main/assets/
+          else
+            echo "::warning::LO assets artifact 못 찾음 — LOK init 실패 가능"
+          fi
 
       - name: Cache Gradle
         uses: actions/cache@v4
