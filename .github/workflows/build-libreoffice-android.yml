@@ -93,10 +93,10 @@ jobs:
             https://git.libreoffice.org/core "$HOME/lo-core"
           echo "LO_SRC=$HOME/lo-core" >> $GITHUB_ENV
 
-      # ccache 캐시 — 컴파일 결과물 재사용. 같은 source가 반복 빌드되면 즉시 hit.
-      # 빌드 실패 후 재시도 시 이전 성공 파일들은 ccache에서 즉시 가져옴 → 사실상 resume.
-      - name: Cache ccache
-        uses: actions/cache@v4
+      # ccache 캐시 복원 — 이전 빌드의 결과물 가져오기
+      - name: Restore ccache
+        id: ccache-restore
+        uses: actions/cache/restore@v4
         with:
           path: ~/.ccache
           key: lo-ccache-${{ inputs.lo_branch }}-${{ matrix.abi }}-${{ github.sha }}
@@ -160,6 +160,14 @@ jobs:
           # 빌드 실패해도 .so 가 만들어졌으면 다음 step 에서 픽업
           make -j$(nproc) -k || true
           ccache -s
+
+      # 빌드 성공/실패 무관하게 ccache 저장 — 부분 진행도 보존 → 다음 빌드 가속
+      - name: Save ccache (always)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccache
+          key: lo-ccache-${{ inputs.lo_branch }}-${{ matrix.abi }}-${{ github.sha }}-${{ github.run_id }}
 
       - name: Locate output .so
         working-directory: ${{ env.LO_SRC }}
