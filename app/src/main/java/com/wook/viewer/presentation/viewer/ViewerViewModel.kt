@@ -1,5 +1,6 @@
 package com.wook.viewer.presentation.viewer
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -8,12 +9,16 @@ import com.wook.viewer.di.ApplicationScope
 import com.wook.viewer.domain.error.DocumentError
 import com.wook.viewer.domain.model.Bookmark
 import com.wook.viewer.domain.model.Document
+import com.wook.viewer.domain.model.DocumentFormat
 import com.wook.viewer.domain.model.RenderingFidelity
 import com.wook.viewer.domain.repository.DocumentHandle
 import com.wook.viewer.domain.repository.DocumentRenderer
 import com.wook.viewer.domain.repository.DocumentRepository
 import com.wook.viewer.domain.repository.RendererRegistry
+import com.wook.viewer.render.lok.LOK_SUPPORTED_FORMATS
+import com.wook.viewer.render.lok.LokDocumentRenderer
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +28,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
+import java.io.File
+import java.io.IOException
 import javax.inject.Inject
 
 /** 페이지 내에서의 검색 매치 — 페이지 인덱스 + 텍스트 내 [start, end) 범위. */
@@ -88,7 +96,8 @@ data class ViewerUiState(
 class ViewerViewModel @Inject constructor(
     private val repo: DocumentRepository,
     private val registry: RendererRegistry,
-    @ApplicationScope private val appScope: CoroutineScope
+    @ApplicationScope private val appScope: CoroutineScope,
+    @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ViewerUiState())
@@ -500,6 +509,57 @@ class ViewerViewModel @Inject constructor(
 
     fun clearSaveResult() {
         _state.update { it.copy(saveResult = null) }
+    }
+
+    // ---- Office 포맷 내보내기 (LOK saveAs) ----
+
+    /** LOK 가 활성화돼있고 Office 포맷(DOCX/PPTX/XLSX) 인 경우만 내보내기 가능. */
+    fun canExportOffice(): Boolean {
+        val fmt = _state.value.document?.format ?: return false
+        return fmt in LOK_SUPPORTED_FORMATS && renderer is LokDocumentRenderer
+    }
+
+    /**
+     * 현재 문서를 [lokFormat] 으로 변환해 [targetUri] 에 저장.
+     *
+     * LOK 는 임시 파일에만 저장 가능 → 캐시 파일에 저장 후 SAF URI 로 복사.
+     */
+    fun exportToFormat(targetUri: Uri, lokFormat: String, formatLabel: String) {
+        val r = renderer
+        val h = handle
+        if (r !is LokDocumentRenderer || h == null) {
+            _state.update {
+                it.copy(saveResult = SaveResult.Failure("내보내기를 지원하지 않는 파일입니다"))
+            }
+            return
+        }
+        _state.update { it.copy(saving = true, saveResult = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                val tmpFile = File.createTempFile("export_", ".$lokFormat", appContext.cacheDir)
+                try {
+                    val ok = r.saveAs(h, tmpFile, lokFormat)
+                    if (!ok) throw IOException("LOK saveAs returned false")
+                    appContext.contentResolver.openOutputStream(targetUri, "wt")?.use { out ->
+                        tmpFile.inputStream().use { input -> input.copyTo(out) }
+                    } ?: throw IOException("openOutputStream returned null for $targetUri")
+                    Timber.i("Office export 완료: $lokFormat → $targetUri")
+                } finally {
+                    runCatching { tmpFile.delete() }
+                }
+            }
+            _state.update {
+                it.copy(
+                    saving = false,
+                    saveResult = result.fold(
+                        onSuccess = { SaveResult.Success("$formatLabel 로 저장 완료") },
+                        onFailure = { e ->
+                            SaveResult.Failure("저장 실패: ${e.message ?: e.javaClass.simpleName}")
+                        }
+                    )
+                )
+            }
+        }
     }
 
     private fun closeCurrentHandle() {

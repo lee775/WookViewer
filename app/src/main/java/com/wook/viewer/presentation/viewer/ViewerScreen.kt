@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
@@ -79,6 +80,8 @@ import com.wook.viewer.presentation.viewer.components.BitmapPageInline
 import com.wook.viewer.presentation.viewer.components.BookmarksSheet
 import com.wook.viewer.presentation.viewer.components.EditTopBar
 import com.wook.viewer.presentation.viewer.components.EditableTextPage
+import com.wook.viewer.presentation.viewer.components.ExportFormatDialog
+import com.wook.viewer.presentation.viewer.components.ExportOption
 import com.wook.viewer.presentation.viewer.components.LimitationsDialog
 import com.wook.viewer.presentation.viewer.components.OutlineSheet
 import com.wook.viewer.presentation.viewer.components.PasswordPromptDialog
@@ -123,6 +126,9 @@ fun ViewerScreen(
     var showShareSheet by rememberSaveable { mutableStateOf(false) }
     var showOutlineSheet by rememberSaveable { mutableStateOf(false) }
     var showThumbnails by rememberSaveable { mutableStateOf(false) }
+    var showExportDialog by rememberSaveable { mutableStateOf(false) }
+    // 선택한 포맷을 SAF 결과 콜백에서 사용 — launch 와 result 사이에 보관
+    var pendingExport by remember { mutableStateOf<ExportOption?>(null) }
     // 비밀번호 다이얼로그 — 사용자가 취소를 눌러서 닫았는지 추적해 다시 열리는 걸 막음
     var passwordDialogDismissed by rememberSaveable(state.document?.uri?.toString() ?: "") {
         mutableStateOf(false)
@@ -139,6 +145,17 @@ fun ViewerScreen(
         contract = ActivityResultContracts.CreateDocument("text/plain")
     ) { newUri: Uri? ->
         if (newUri != null) vm.saveAs(newUri)
+    }
+
+    // Office 포맷 변환 SAF 런처 — mime 은 파일명 확장자로 SAF 가 추론
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { newUri: Uri? ->
+        val choice = pendingExport
+        pendingExport = null
+        if (newUri != null && choice != null) {
+            vm.exportToFormat(newUri, choice.lokFormat, choice.label)
+        }
     }
 
     // 편집 모드 중 시스템 백 → 화면 종료가 아닌 편집 취소로
@@ -211,6 +228,7 @@ fun ViewerScreen(
                 showPdfModeToggle = format == DocumentFormat.PDF,
                 pdfInTextMode = isPdfTextMode,
                 showEditToggle = vm.isEditableFormat() && state.error == null,
+                showExportToggle = vm.canExportOffice() && state.error == null,
                 barColor = barColor,
                 textColor = textColor,
                 mutedColor = mutedColor,
@@ -223,7 +241,8 @@ fun ViewerScreen(
                 onToggleBookmark = vm::toggleCurrentBookmark,
                 onShowBookmarks = { showBookmarksSheet = true },
                 onTogglePdfMode = vm::togglePdfViewMode,
-                onEnterEdit = vm::enterEditMode
+                onEnterEdit = vm::enterEditMode,
+                onExport = { showExportDialog = true }
             )
         }
 
@@ -297,6 +316,20 @@ fun ViewerScreen(
     if (showLimitationsDialog) {
         LimitationsDialog(onDismiss = { showLimitationsDialog = false })
     }
+
+    val doc = state.document
+    if (showExportDialog && doc != null) {
+        ExportFormatDialog(
+            sourceFormat = doc.format,
+            sourceDisplayName = doc.displayName,
+            onSelect = { opt ->
+                showExportDialog = false
+                pendingExport = opt
+                exportLauncher.launch(opt.defaultFileName)
+            },
+            onDismiss = { showExportDialog = false }
+        )
+    }
     if (showBookmarksSheet) {
         BookmarksSheet(
             bookmarks = state.bookmarks,
@@ -330,7 +363,6 @@ fun ViewerScreen(
 
     if (showShareSheet) {
         val scope = rememberCoroutineScope()
-        val doc = state.document
         ShareSheet(
             canShareText = doc != null && vm.isSearchSupported,
             onShareOriginal = {
@@ -386,6 +418,7 @@ private fun ViewerTopBar(
     showPdfModeToggle: Boolean,
     pdfInTextMode: Boolean,
     showEditToggle: Boolean,
+    showExportToggle: Boolean,
     barColor: Color,
     textColor: Color,
     mutedColor: Color,
@@ -398,7 +431,8 @@ private fun ViewerTopBar(
     onToggleBookmark: () -> Unit,
     onShowBookmarks: () -> Unit,
     onTogglePdfMode: () -> Unit,
-    onEnterEdit: () -> Unit
+    onEnterEdit: () -> Unit,
+    onExport: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -445,6 +479,16 @@ private fun ViewerTopBar(
         if (showEditToggle) {
             TopBarIconButton(iconBg = iconBg, onClick = onEnterEdit) {
                 Icon(Icons.Filled.Edit, contentDescription = "편집", tint = textColor)
+            }
+            Spacer(Modifier.width(4.dp))
+        }
+        if (showExportToggle) {
+            TopBarIconButton(iconBg = iconBg, onClick = onExport) {
+                Icon(
+                    Icons.Filled.FileDownload,
+                    contentDescription = "다른 포맷으로 저장",
+                    tint = textColor
+                )
             }
             Spacer(Modifier.width(4.dp))
         }

@@ -252,6 +252,31 @@ class LokDocumentRenderer @Inject constructor(
         }
     }
 
+    /**
+     * 현재 열린 문서를 다른 포맷으로 임시 파일에 저장. UI 가 결과 파일을 SAF URI 로 복사.
+     *
+     * @param lokFormat LOK 가 인식하는 포맷 단축명: "pdf", "docx", "odt", "pptx", "odp", "xlsx", "ods"
+     * @return 저장 성공 시 true. LOK 가 result 를 반환하지 않으므로 파일 존재/크기로 판정.
+     */
+    suspend fun saveAs(handle: DocumentHandle, outFile: File, lokFormat: String): Boolean {
+        val h = handle as Handle
+        return withContext(Dispatchers.IO) {
+            h.mutex.withLock {
+                runCatching {
+                    val url = "file://${outFile.absolutePath}"
+                    Timber.i("LOK saveAs: $lokFormat → ${outFile.absolutePath}")
+                    h.document.saveAs(url, lokFormat, "")
+                    val ok = outFile.exists() && outFile.length() > 0
+                    if (!ok) Timber.w("LOK saveAs: 결과 파일 없음/빈 파일")
+                    ok
+                }.getOrElse {
+                    Timber.e(it, "LOK saveAs 실패: $lokFormat")
+                    false
+                }
+            }
+        }
+    }
+
     override suspend fun close(handle: DocumentHandle) {
         val h = handle as Handle
         withContext(Dispatchers.IO) {
