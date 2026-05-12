@@ -1,6 +1,6 @@
 package com.wook.viewer.render
 
-import com.wook.viewer.data.lok.LokAvailability
+import com.wook.viewer.data.lok.LokSession
 import com.wook.viewer.domain.model.DocumentFormat
 import com.wook.viewer.domain.repository.AppSettingsRepository
 import com.wook.viewer.domain.repository.DocumentRenderer
@@ -23,7 +23,7 @@ import javax.inject.Singleton
 class RendererRegistryImpl @Inject constructor(
     renderers: Set<@JvmSuppressWildcards DocumentRenderer>,
     private val lokRenderer: LokDocumentRenderer,
-    private val lokAvailability: LokAvailability,
+    private val lokSession: LokSession,
     private val settings: AppSettingsRepository
 ) : RendererRegistry {
 
@@ -45,6 +45,8 @@ class RendererRegistryImpl @Inject constructor(
     private fun shouldUseLok(format: DocumentFormat): Boolean {
         if (format !in LOK_SUPPORTED_FORMATS) return false
         if (!settings.settings.value.useLibreOfficeForOffice) return false
-        return lokAvailability.isAvailable()
+        // lib 가용 + 비동기 초기화 완료 모두 충족해야 함.
+        // 초기화 진행 중인 짧은 순간에는 false 반환 → 사용자가 즉시 문서 열면 기존 렌더러
+        return lokSession.isReady()
     }
 }

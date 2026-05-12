@@ -1,6 +1,16 @@
 package com.wook.viewer.data.lok
 
 import android.app.Activity
+import com.wook.viewer.di.ApplicationScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.libreoffice.kit.LibreOfficeKit
 import org.libreoffice.kit.Office
 import timber.log.Timber
@@ -9,65 +19,92 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * LibreOfficeKit 세션 — Office 싱글톤 + 초기화 라이프사이클.
+ * LibreOfficeKit 세션 — Office 싱글톤 + 비동기 초기화 라이프사이클.
  *
- * LOK는 프로세스 당 1회 초기화하면 충분하다. [LibreOfficeKit.init] 는 dataDir,
- * cacheDir, apkFile, AssetManager 를 가져와 native 측에 전달한다.
- * 이 정보는 Activity의 ApplicationInfo 에서 수집되므로 Activity 컨텍스트가 필요.
+ * 초기화는 native lib 로드 + LibreOfficeKit.init (2-5초 소요)이라 메인 스레드에서
+ * 동기로 부르면 ANR. [tryInit] 는 즉시 반환하고 백그라운드에서 진행, [state] StateFlow 로
+ * 진행 상태 노출. UI는 NotReady 상태일 때 LOK 토글을 노출하지 않거나 로딩 표시.
  *
  * 사용 흐름:
- *   1. MainActivity.onCreate 에서 [tryInit] 호출 (Activity 전달)
- *   2. 성공 시 [getOffice] 가 Office 인스턴스 반환
- *   3. Renderer 가 office.documentLoad(uri) 로 문서 열기
+ *   1. MainActivity.onCreate → [tryInit] 호출 (비동기 시작, 즉시 반환)
+ *   2. Renderer 가 [getOffice] 로 Office 인스턴스 얻기 (초기화 완료 후만 non-null)
+ *   3. RendererRegistry 는 [isReady] 체크 후 LOK 라우팅 여부 결정
  *
- * native lib 미존재 시 [tryInit] 가 false 반환하며 [LokAvailability] 와 일관성 유지.
+ * native lib 미존재 시 [state] 가 [State.Unavailable] 로 즉시 전환.
  */
 @Singleton
 class LokSession @Inject constructor(
-    private val lokAvailability: LokAvailability
+    private val lokAvailability: LokAvailability,
+    @ApplicationScope private val appScope: CoroutineScope
 ) {
 
-    private val officeRef = AtomicReference<Office?>(null)
-    @Volatile private var initialized = false
+    enum class State {
+        /** 초기화 시도 전. */
+        Idle,
+        /** 백그라운드에서 초기화 중. */
+        Initializing,
+        /** 초기화 완료, Office 인스턴스 사용 가능. */
+        Ready,
+        /** native lib 부재 또는 init 실패. */
+        Unavailable
+    }
 
-    fun isInitialized(): Boolean = initialized && officeRef.get() != null
+    private val _state = MutableStateFlow(State.Idle)
+    val state: StateFlow<State> = _state.asStateFlow()
+
+    private val officeRef = AtomicReference<Office?>(null)
+    private val initMutex = Mutex()
+
+    fun isReady(): Boolean = _state.value == State.Ready && officeRef.get() != null
 
     /**
-     * LOK 초기화 시도. 이미 초기화되어 있으면 즉시 true.
-     * native lib 미가용 또는 init 실패 시 false.
+     * 비동기 초기화 시작. 즉시 반환. 이미 초기화 시도 중이거나 완료면 no-op.
+     * Activity 컨텍스트가 필요하므로 MainActivity.onCreate 에서 호출.
      */
-    @Synchronized
-    fun tryInit(activity: Activity): Boolean {
-        if (initialized) return officeRef.get() != null
-        if (!lokAvailability.isAvailable()) {
-            initialized = true  // 시도 완료 표시 — 재시도 방지
-            return false
-        }
+    fun tryInit(activity: Activity) {
+        if (_state.value != State.Idle) return  // 이미 진행 또는 종료 상태
+        _state.value = State.Initializing
 
-        return runCatching {
-            LibreOfficeKit.init(activity)
-            val handle = LibreOfficeKit.getLibreOfficeKitHandle()
-            requireNotNull(handle) { "LibreOfficeKit handle is null after init" }
-            val office = Office(handle)
-            officeRef.set(office)
-            initialized = true
-            Timber.i("LibreOfficeKit 초기화 완료")
-            true
-        }.getOrElse { e ->
-            Timber.e(e, "LibreOfficeKit 초기화 실패")
-            initialized = true
-            false
+        appScope.launch(Dispatchers.IO) {
+            initMutex.withLock {
+                if (_state.value != State.Initializing) return@withLock
+
+                if (!lokAvailability.isAvailable()) {
+                    _state.value = State.Unavailable
+                    return@withLock
+                }
+
+                val ok = runCatching {
+                    // LibreOfficeKit.init 은 내부적으로 main thread 의존성 없음 (assets 읽기 등).
+                    // 그러나 첫 호출이 무겁기 때문에 IO dispatcher 에서 실행.
+                    LibreOfficeKit.init(activity)
+                    val handle = LibreOfficeKit.getLibreOfficeKitHandle()
+                    requireNotNull(handle) { "LibreOfficeKit handle is null after init" }
+                    val office = Office(handle)
+                    officeRef.set(office)
+                    Timber.i("LibreOfficeKit 초기화 완료")
+                    true
+                }.getOrElse { e ->
+                    Timber.e(e, "LibreOfficeKit 초기화 실패")
+                    false
+                }
+
+                _state.value = if (ok) State.Ready else State.Unavailable
+            }
         }
     }
 
     fun getOffice(): Office? = officeRef.get()
 
-    /** 앱 종료 시점 (선택적). LOK는 보통 프로세스 종료까지 살려둔다. */
-    @Synchronized
-    fun destroy() {
-        officeRef.getAndSet(null)?.let { office ->
-            runCatching { office.destroy() }.onFailure {
-                Timber.w(it, "Office.destroy 실패")
+    /** 앱 종료 시 (선택적). LOK는 보통 프로세스 종료까지 살려둔다. */
+    suspend fun destroy() {
+        withContext(Dispatchers.IO) {
+            initMutex.withLock {
+                officeRef.getAndSet(null)?.let { office ->
+                    runCatching { office.destroy() }
+                        .onFailure { Timber.w(it, "Office.destroy 실패") }
+                }
+                _state.value = State.Idle
             }
         }
     }

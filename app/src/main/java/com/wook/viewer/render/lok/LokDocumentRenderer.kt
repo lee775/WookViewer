@@ -3,6 +3,7 @@ package com.wook.viewer.render.lok
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.util.LruCache
 import com.wook.viewer.data.lok.LokSession
 import com.wook.viewer.domain.error.DocumentError
 import com.wook.viewer.domain.model.DocumentFormat
@@ -15,8 +16,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.libreoffice.kit.Document
 import org.libreoffice.kit.DirectBufferAllocator
+import org.libreoffice.kit.Document
 import timber.log.Timber
 import java.io.File
 import java.nio.ByteBuffer
@@ -24,23 +25,23 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * LibreOfficeKit 기반 렌더러 — Office 파일 100% 재현 목표.
+ * LibreOfficeKit 기반 렌더러 — Office 파일 100% 재현 목표 (S3-S4 단계).
  *
- * **현재 상태 (Session 1 + S3 사전 준비)**:
- *   - S2 (native lib 빌드) 완료 시 자동 활성화
- *   - JNI API 호출 코드는 준비되어 있음 — 라이브러리가 들어오면 동작
- *
- * 흐름:
- *   1. SAF URI → cacheDir 로 복사 (LOK 은 file:// 만 받음)
- *   2. office.documentLoad("file://...") → Document 핸들
- *   3. pageCount = doc.getParts() (presentation/spreadsheet) 또는 페이지네이션
- *   4. renderPage = paintTileNative 로 ARGB DirectBuffer 채워서 Bitmap 만들기
- *
- * 좌표 단위:
+ * 단위 시스템:
  *   - LOK 은 twips (1 inch = 1440 twips)
  *   - 우리 viewer는 px (target width 기반)
- *   - 변환: twips * (1/1440 inch) * (DPI px/inch)
- *   - 단순화: ratio = targetPx / docWidthTwips
+ *   - 변환: twips * (1/1440 inch) * (target_dpi px/inch)
+ *
+ * 페이지/파트 모델:
+ *   - PPTX/XLSX: 각 part = 1 슬라이드/시트. setPart() 로 전환
+ *   - DOCX: 일반적으로 1 part 이고 longa-page. parts > 1 이면 그대로 사용.
+ *     (Calc 가 아닌 Writer 는 LOK 가 자동 페이지화 안 함)
+ *
+ * 견고화 (S3):
+ *   - 모든 JNI 호출 runCatching 으로 보호 — 실패 시 DocumentError 로 변환
+ *   - Mutex 로 동시 호출 직렬화 (LOK Document 가 thread-safe 하지 않음)
+ *   - 비트맵 LRU 캐시 (3-5 페이지) — paintTile 재호출 회피
+ *   - 캐시 dispose 시 비트맵 recycle
  */
 @Singleton
 class LokDocumentRenderer @Inject constructor(
@@ -48,61 +49,94 @@ class LokDocumentRenderer @Inject constructor(
     private val session: LokSession
 ) : DocumentRenderer {
 
-    /**
-     * 일부러 빈 set: Hilt @IntoSet 으로 등록되어도
-     * 기존 [DocumentFormat] → renderer 매핑을 덮어쓰지 않도록.
-     * 실제 라우팅은 RendererRegistryImpl 이 [LOK_SUPPORTED_FORMATS] 를 참조해 별도 처리.
-     */
     override val supportedFormats: Set<DocumentFormat> = emptySet()
 
     private class Handle(
         override val uri: Uri,
         val document: Document,
         val tempFile: File,
-        val mutex: Mutex = Mutex()
+        val docType: Int,
+        val partCount: Int,
+        val mutex: Mutex = Mutex(),
+        val bitmapCache: BitmapLruCache = BitmapLruCache(BITMAP_CACHE_SIZE_BYTES)
     ) : DocumentHandle
 
-    override suspend fun open(uri: Uri): DocumentHandle = withContext(Dispatchers.IO) {
-        val office = session.getOffice()
-            ?: throw DocumentError.Unknown(IllegalStateException("LokSession 미초기화"))
+    private data class CacheKey(val partIndex: Int, val widthPx: Int)
 
-        // LOK은 file:// 만 받음 — content:// 라면 cacheDir 로 복사
-        val tempFile = copyToCache(uri)
-        val fileUrl = "file://${tempFile.absolutePath}"
+    /**
+     * 페이지 비트맵 LRU 캐시.
+     * 같은 page+width 조합은 재사용, evict 된 비트맵은 즉시 recycle 해서 메모리 회수.
+     */
+    private class BitmapLruCache(maxSize: Int) : LruCache<CacheKey, Bitmap>(maxSize) {
+        override fun sizeOf(key: CacheKey, value: Bitmap): Int = value.byteCount
+        override fun entryRemoved(
+            evicted: Boolean,
+            key: CacheKey,
+            oldValue: Bitmap,
+            newValue: Bitmap?
+        ) {
+            if (evicted && !oldValue.isRecycled) runCatching { oldValue.recycle() }
+        }
+    }
 
-        val document = office.documentLoad(fileUrl)
-            ?: run {
-                val err = runCatching { office.error }.getOrNull() ?: "(unknown)"
-                tempFile.delete()
-                // password 보호 문서 감지: LOK은 documentLoad에서 null 반환 + error 메시지
-                if (err.contains("password", ignoreCase = true) ||
-                    err.contains("encrypt", ignoreCase = true)
-                ) {
-                    throw DocumentError.PasswordProtected()
-                }
-                throw DocumentError.Corrupted(RuntimeException("LOK documentLoad 실패: $err"))
+    override suspend fun open(uri: Uri): DocumentHandle = openInternal(uri, password = null)
+
+    override suspend fun open(uri: Uri, password: String): DocumentHandle =
+        openInternal(uri, password)
+
+    private suspend fun openInternal(uri: Uri, password: String?): DocumentHandle =
+        withContext(Dispatchers.IO) {
+            val office = session.getOffice()
+                ?: throw DocumentError.Unknown(IllegalStateException("LokSession 미초기화"))
+
+            val tempFile = copyToCache(uri)
+            val fileUrl = "file://${tempFile.absolutePath}"
+
+            // 비밀번호가 있으면 먼저 설정 (LOK 은 다음 load 호출에서 사용)
+            if (!password.isNullOrEmpty()) {
+                runCatching { office.setDocumentPassword(fileUrl, password) }
+                    .onFailure { Timber.w(it, "setDocumentPassword 실패") }
             }
 
-        runCatching { document.initializeForRendering() }
-            .onFailure { Timber.w(it, "initializeForRendering 실패 — 일부 렌더 결함 가능") }
+            val document = runCatching { office.documentLoad(fileUrl) }
+                .getOrElse {
+                    tempFile.delete()
+                    Timber.e(it, "documentLoad 예외")
+                    throw DocumentError.Corrupted(it)
+                } ?: run {
+                    val err = runCatching { office.error }.getOrNull().orEmpty()
+                    tempFile.delete()
+                    throw classifyOpenError(err, password != null)
+                }
 
-        Handle(uri, document, tempFile)
-    }
+            runCatching { document.initializeForRendering() }
+                .onFailure { Timber.w(it, "initializeForRendering 실패 — 일부 렌더 결함 가능") }
+
+            val docType = runCatching { document.documentType }.getOrDefault(Document.DOCTYPE_OTHER)
+            val partCount = runCatching { document.parts.coerceAtLeast(1) }.getOrDefault(1)
+            Timber.i("LOK 문서 열기: type=$docType, parts=$partCount, file=${tempFile.name}")
+
+            Handle(uri, document, tempFile, docType, partCount)
+        }
 
     override suspend fun pageCount(handle: DocumentHandle): Int {
         val h = handle as Handle
-        return h.mutex.withLock { h.document.parts }
+        return h.partCount  // open 시 한 번 측정해 두고 재사용
     }
 
     override suspend fun pageSize(handle: DocumentHandle, index: Int): PageSize {
         val h = handle as Handle
         return h.mutex.withLock {
-            if (h.document.parts > 1) h.document.setPart(index)
-            // twips → points (1pt = 20 twips)
-            PageSize(
-                widthPt = h.document.documentWidth.toFloat() / 20f,
-                heightPt = h.document.documentHeight.toFloat() / 20f
-            )
+            runCatching {
+                if (h.partCount > 1) h.document.setPart(index.coerceIn(0, h.partCount - 1))
+                PageSize(
+                    widthPt = h.document.documentWidth.toFloat() / TWIPS_PER_POINT,
+                    heightPt = h.document.documentHeight.toFloat() / TWIPS_PER_POINT
+                )
+            }.getOrElse {
+                Timber.w(it, "pageSize 실패 — 기본값 반환")
+                PageSize(595f, 842f)  // A4 기본
+            }
         }
     }
 
@@ -112,74 +146,120 @@ class LokDocumentRenderer @Inject constructor(
         targetWidthPx: Int
     ): RenderedPage = withContext(Dispatchers.IO) {
         val h = handle as Handle
-        h.mutex.withLock {
-            if (h.document.parts > 1) h.document.setPart(index)
+        val widthPx = targetWidthPx.coerceAtLeast(MIN_WIDTH_PX)
+        val cacheKey = CacheKey(index, widthPx)
 
-            val docWidthTwips = h.document.documentWidth.toInt()
-            val docHeightTwips = h.document.documentHeight.toInt()
+        // 캐시 hit
+        h.bitmapCache.get(cacheKey)?.let { cached ->
+            if (!cached.isRecycled) {
+                return@withContext RenderedPage(
+                    index = index,
+                    widthPx = cached.width,
+                    heightPx = cached.height,
+                    bitmap = cached
+                )
+            }
+            h.bitmapCache.remove(cacheKey)  // 회수된 비트맵 청소
+        }
+
+        h.mutex.withLock {
+            // 동시에 같은 페이지 요청 시 다른 쪽이 캐시 채웠을 수 있음
+            h.bitmapCache.get(cacheKey)?.let { cached ->
+                if (!cached.isRecycled) {
+                    return@withLock RenderedPage(index, cached.width, cached.height, cached)
+                }
+            }
+
+            if (h.partCount > 1) {
+                runCatching { h.document.setPart(index.coerceIn(0, h.partCount - 1)) }
+                    .onFailure { Timber.w(it, "setPart($index) 실패") }
+            }
+
+            val docWidthTwips = runCatching { h.document.documentWidth }.getOrDefault(0L).toInt()
+            val docHeightTwips = runCatching { h.document.documentHeight }.getOrDefault(0L).toInt()
             if (docWidthTwips <= 0 || docHeightTwips <= 0) {
                 throw DocumentError.Corrupted(
                     IllegalStateException("LOK 문서 크기 0: w=$docWidthTwips h=$docHeightTwips")
                 )
             }
 
-            val widthPx = targetWidthPx.coerceAtLeast(1)
             val heightPx = (widthPx.toLong() * docHeightTwips / docWidthTwips)
-                .toInt().coerceAtLeast(1)
+                .toInt().coerceAtLeast(1).coerceAtMost(MAX_HEIGHT_PX)
 
+            // 비트맵을 위해 DirectBuffer 할당
             val bufferSize = widthPx * heightPx * 4  // ARGB 8888
-            val buffer: ByteBuffer = DirectBufferAllocator.allocate(bufferSize)
+            val buffer: ByteBuffer = try {
+                DirectBufferAllocator.allocate(bufferSize)
+            } catch (oom: OutOfMemoryError) {
+                Timber.e(oom, "DirectBuffer 할당 실패 — $bufferSize bytes")
+                throw DocumentError.Unknown(oom)
+            }
 
-            // LOK paintTile: ARGB DirectBuffer 에 그림. 전체 페이지를 한 타일로 요청.
-            h.document.paintTile(
-                buffer,
-                /* canvasWidth */ widthPx,
-                /* canvasHeight */ heightPx,
-                /* tilePositionX */ 0,
-                /* tilePositionY */ 0,
-                /* tileWidth */ docWidthTwips,
-                /* tileHeight */ docHeightTwips
-            )
+            try {
+                // LOK paintTile: ARGB DirectBuffer 에 그림. 전체 페이지를 한 타일로 요청.
+                runCatching {
+                    h.document.paintTile(
+                        buffer,
+                        widthPx,
+                        heightPx,
+                        0,
+                        0,
+                        docWidthTwips,
+                        docHeightTwips
+                    )
+                }.getOrElse {
+                    Timber.e(it, "paintTile($index) 실패")
+                    throw DocumentError.Corrupted(it)
+                }
 
-            val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
-            buffer.rewind()
-            bitmap.copyPixelsFromBuffer(buffer)
-            DirectBufferAllocator.free(buffer)
+                val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+                buffer.rewind()
+                bitmap.copyPixelsFromBuffer(buffer)
 
-            RenderedPage(
-                index = index,
-                widthPx = widthPx,
-                heightPx = heightPx,
-                bitmap = bitmap
-            )
+                // 캐시 저장 — 평가 후 LRU 가 알아서 evict
+                h.bitmapCache.put(cacheKey, bitmap)
+
+                RenderedPage(
+                    index = index,
+                    widthPx = widthPx,
+                    heightPx = heightPx,
+                    bitmap = bitmap
+                )
+            } finally {
+                runCatching { DirectBufferAllocator.free(buffer) }
+            }
         }
     }
 
-    override suspend fun open(uri: Uri, password: String): DocumentHandle {
-        val office = session.getOffice()
-            ?: throw DocumentError.Unknown(IllegalStateException("LokSession 미초기화"))
-
-        val tempFile = copyToCache(uri)
-        val fileUrl = "file://${tempFile.absolutePath}"
-
-        // LOK에 비밀번호 설정 후 로드 시도
-        office.setDocumentPassword(fileUrl, password)
-        val document = office.documentLoad(fileUrl)
-            ?: run {
-                val err = runCatching { office.error }.getOrNull() ?: ""
-                tempFile.delete()
-                val wrong = err.contains("password", ignoreCase = true)
-                throw DocumentError.PasswordProtected(wrongPassword = wrong)
+    override suspend fun getPageText(handle: DocumentHandle, index: Int): String? {
+        val h = handle as Handle
+        return withContext(Dispatchers.IO) {
+            h.mutex.withLock {
+                runCatching {
+                    if (h.partCount > 1) h.document.setPart(index.coerceIn(0, h.partCount - 1))
+                    // 1. 전체 선택
+                    h.document.postUnoCommand(".uno:SelectAll", null, false)
+                    // 2. 선택 텍스트 추출 — text/plain;charset=utf-8
+                    val text = h.document.getTextSelection("text/plain;charset=utf-8")
+                    // 3. 선택 해제 (다음 페이지 위해)
+                    h.document.resetSelection()
+                    text?.takeIf { it.isNotBlank() }
+                }.getOrElse {
+                    Timber.w(it, "getPageText($index) 실패")
+                    null
+                }
             }
-        runCatching { document.initializeForRendering() }
-        return Handle(uri, document, tempFile)
+        }
     }
 
     override suspend fun close(handle: DocumentHandle) {
         val h = handle as Handle
         withContext(Dispatchers.IO) {
             h.mutex.withLock {
+                // 캐시된 비트맵 해제
+                h.bitmapCache.evictAll()
                 runCatching { h.document.destroy() }
+                    .onFailure { Timber.w(it, "Document.destroy 실패") }
                 runCatching { h.tempFile.delete() }
             }
         }
@@ -194,6 +274,25 @@ class LokDocumentRenderer @Inject constructor(
             temp.outputStream().use { input.copyTo(it) }
         }
         return temp
+    }
+
+    private fun classifyOpenError(errorMsg: String, hadPassword: Boolean): DocumentError {
+        val lower = errorMsg.lowercase()
+        return when {
+            "password" in lower || "encrypted" in lower ->
+                DocumentError.PasswordProtected(wrongPassword = hadPassword)
+            "unsupported" in lower || "version" in lower ->
+                DocumentError.UnsupportedVariant("LOK 미지원 변형", RuntimeException(errorMsg))
+            else -> DocumentError.Corrupted(RuntimeException("LOK documentLoad 실패: $errorMsg"))
+        }
+    }
+
+    private companion object {
+        const val TWIPS_PER_POINT = 20f  // 1 pt = 20 twips
+        const val MIN_WIDTH_PX = 100
+        const val MAX_HEIGHT_PX = 8192  // 안전 한계
+        // 비트맵 캐시 ~30MB (페이지 ARGB 1080x1512 ≈ 6.5MB → ~4-5 페이지)
+        const val BITMAP_CACHE_SIZE_BYTES = 30 * 1024 * 1024
     }
 }
 
