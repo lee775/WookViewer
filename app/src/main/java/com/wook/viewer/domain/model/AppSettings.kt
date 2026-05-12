@@ -16,11 +16,5 @@ enum class TextScale(val multiplier: Float) {
 
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val textScale: TextScale = TextScale.MEDIUM,
-    /**
-     * LibreOfficeKit을 Office 파일(DOCX/PPTX/XLSX/HWP)에 사용할지.
-     * 기본 true — native lib 동봉 APK 의 핵심 가치. lib 없거나 init 실패 시
-     * 자동으로 기존 렌더러 폴백 (회귀 없음).
-     */
-    val useLibreOfficeForOffice: Boolean = true
+    val textScale: TextScale = TextScale.MEDIUM
 )

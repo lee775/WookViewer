@@ -18,5 +18,4 @@ class SettingsViewModel @Inject constructor(
 
     fun setThemeMode(mode: ThemeMode) = repo.setThemeMode(mode)
     fun setTextScale(scale: TextScale) = repo.setTextScale(scale)
-    fun setUseLibreOffice(enabled: Boolean) = repo.setUseLibreOffice(enabled)
 }

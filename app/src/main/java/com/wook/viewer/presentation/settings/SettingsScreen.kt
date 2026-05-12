@@ -18,7 +18,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -69,43 +68,8 @@ fun SettingsScreen(
             )
         }
 
-        Spacer(Modifier.height(8.dp))
-        SectionHeader(stringResource(R.string.settings_advanced_section))
-        LokToggleRow(
-            enabled = settings.useLibreOfficeForOffice,
-            onToggle = vm::setUseLibreOffice
-        )
-
         Spacer(Modifier.height(16.dp))
         AppInfoSection()
-    }
-}
-
-@Composable
-private fun LokToggleRow(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onToggle(!enabled) }
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.settings_use_libreoffice),
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 15.sp
-            )
-            Text(
-                text = stringResource(R.string.settings_use_libreoffice_hint),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
-            )
-        }
-        Switch(checked = enabled, onCheckedChange = onToggle)
     }
 }
 
