@@ -4,6 +4,14 @@ on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      include_lo_native:
+        description: 'LibreOffice native libs 포함 (APK ~240MB로 커짐)'
+        type: boolean
+        default: false
+      lo_run_id:
+        description: 'LO 네이티브 빌드 run ID (위 옵션 켤 때만)'
+        default: '25707484708'
 
 jobs:
   build:
@@ -17,6 +25,22 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+
+      - name: Download LibreOffice native libs (옵션)
+        if: ${{ inputs.include_lo_native == true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          # LO build artifact 다운로드 — 같은 repo의 별도 워크플로 산출물
+          gh run download "${{ inputs.lo_run_id }}" -D /tmp/lo-native -R "${{ github.repository }}"
+          # artifact 이름이 'libreoffice-android-arm64-v8a-<branch>' 형태
+          ARTIFACT_DIR=$(find /tmp/lo-native -maxdepth 1 -mindepth 1 -type d | head -1)
+          echo "Artifact dir: $ARTIFACT_DIR"
+          ls -lah "$ARTIFACT_DIR"
+          cp "$ARTIFACT_DIR"/*.so app/src/main/jniLibs/arm64-v8a/
+          echo "=== jniLibs ==="
+          ls -lah app/src/main/jniLibs/arm64-v8a/
 
       - name: Cache Gradle
         uses: actions/cache@v4

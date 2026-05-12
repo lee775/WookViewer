@@ -5,10 +5,13 @@
 
 | 파일 | 출처 |
 |---|---|
-| `LibreOfficeKit.java` | LibreOffice core, master branch |
-| `Office.java` | LibreOffice core, master branch |
-| `Document.java` | LibreOffice core, master branch |
-| `DirectBufferAllocator.java` | LibreOffice core, master branch |
+| `LibreOfficeKit.java` | LibreOffice core, `libreoffice-26-2` |
+| `Office.java` | LibreOffice core, `libreoffice-26-2` |
+| `Document.java` | LibreOffice core, `libreoffice-26-2` |
+| `DirectBufferAllocator.java` | LibreOffice core, `libreoffice-26-2` |
+
+(현재 `libreoffice-26-2` 와 `master` 의 이 4개 파일은 동일하지만 우리 빌드 산출물과
+브랜치를 맞추기 위해 26-2 명시.)
 
 ## 라이선스
 
