@@ -19,7 +19,8 @@ data class AppSettings(
     val textScale: TextScale = TextScale.MEDIUM,
     /**
      * LibreOfficeKit을 Office 파일(DOCX/PPTX/XLSX/HWP)에 사용할지.
-     * native lib이 빌드되어 있어야 실제 적용. 기본 false (개선 중인 베타 옵션).
+     * 기본 true — native lib 동봉 APK 의 핵심 가치. lib 없거나 init 실패 시
+     * 자동으로 기존 렌더러 폴백 (회귀 없음).
      */
-    val useLibreOfficeForOffice: Boolean = false
+    val useLibreOfficeForOffice: Boolean = true
 )

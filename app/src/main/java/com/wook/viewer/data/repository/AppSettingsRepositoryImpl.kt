@@ -33,7 +33,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
     private fun loadFromPrefs(): AppSettings {
         val themeOrdinal = prefs.getInt(KEY_THEME_MODE, ThemeMode.SYSTEM.ordinal)
         val scaleOrdinal = prefs.getInt(KEY_TEXT_SCALE, TextScale.MEDIUM.ordinal)
-        val useLok = prefs.getBoolean(KEY_USE_LOK, false)
+        val useLok = prefs.getBoolean(KEY_USE_LOK, true)
         return AppSettings(
             themeMode = ThemeMode.entries.getOrElse(themeOrdinal) { ThemeMode.SYSTEM },
             textScale = TextScale.entries.getOrElse(scaleOrdinal) { TextScale.MEDIUM },
