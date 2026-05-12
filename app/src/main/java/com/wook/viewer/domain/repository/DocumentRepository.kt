@@ -25,6 +25,9 @@ interface DocumentRepository {
 
     suspend fun removeRecent(uriString: String)
 
+    /** 텍스트 내용을 기존 URI 에 덮어쓰기. SAF write 권한 필요. */
+    suspend fun writeTextContent(uri: Uri, content: String, charset: String = "UTF-8")
+
     // ---- Bookmarks ----
 
     fun observeBookmarks(uriString: String): Flow<List<Bookmark>>

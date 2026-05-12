@@ -33,8 +33,26 @@ class SafFileSource @Inject constructor(
 
     fun persistPermission(uri: Uri) {
         runCatching {
-            resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            // 편집 저장을 위해 WRITE 권한도 함께 요청
+            resolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
         }.onFailure { Timber.w(it, "takePersistableUriPermission failed for $uri") }
+    }
+
+    /**
+     * URI 에 텍스트 내용 덮어쓰기. SAF write 권한이 있어야 함.
+     * @throws java.io.IOException 쓰기 실패 (권한, 디스크 풀, 파일 사라짐 등)
+     */
+    fun writeText(uri: Uri, content: String, charset: String = "UTF-8") {
+        val cs = runCatching { java.nio.charset.Charset.forName(charset) }
+            .getOrDefault(Charsets.UTF_8)
+        resolver.openOutputStream(uri, "wt").use { out ->
+            requireNotNull(out) { "openOutputStream returned null for $uri" }
+            out.write(content.toByteArray(cs))
+            out.flush()
+        }
     }
 
     @Throws(SafResolveException::class)

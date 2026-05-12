@@ -32,6 +32,12 @@ data class SearchMatch(
     val rangeEnd: Int
 )
 
+/** 저장 결과 이벤트. UI 가 Snackbar/Toast 로 표시 후 [ViewerViewModel.clearSaveResult]. */
+sealed interface SaveResult {
+    data class Success(val message: String) : SaveResult
+    data class Failure(val message: String) : SaveResult
+}
+
 /** PDF/이미지 뷰 모드. TEXT 모드는 PDF에만 의미가 있음 (이미지는 텍스트 없음). */
 enum class PdfViewMode { BITMAP, TEXT }
 
@@ -53,6 +59,15 @@ data class ViewerUiState(
      * false 면 포맷 기본 fidelity 따름 (TEXT_ONLY 는 TextPageInline).
      */
     val useBitmapRendering: Boolean = false,
+
+    /** 편집 모드 — TXT/MD 에서만 의미. true 면 BasicTextField 활성. */
+    val editMode: Boolean = false,
+    /** 편집 중인 텍스트 (편집 모드 진입 시 첫 페이지 텍스트로 초기화). */
+    val editedText: String = "",
+    /** 저장 진행 상태. */
+    val saving: Boolean = false,
+    /** 저장 결과 메시지 (Snackbar 등). */
+    val saveResult: SaveResult? = null,
 
     // 문서 내부 목차 (PDF Outline 등) — null/빈 리스트면 아이콘 미노출
     val outline: List<com.wook.viewer.domain.model.OutlineNode>? = null,
@@ -400,6 +415,91 @@ class ViewerViewModel @Inject constructor(
             viewModelScope.launch { repo.updateLastPage(doc.uri.toString(), pageIndex) }
         }
         refreshCurrentPageBookmark()
+    }
+
+    // ---- 편집 ----
+
+    /** 텍스트 포맷(.txt/.md) 만 편집 가능. */
+    fun isEditableFormat(): Boolean {
+        val fmt = _state.value.document?.format ?: return false
+        return fmt == com.wook.viewer.domain.model.DocumentFormat.PLAIN_TEXT ||
+            fmt == com.wook.viewer.domain.model.DocumentFormat.MARKDOWN
+    }
+
+    fun enterEditMode() {
+        if (!isEditableFormat()) return
+        viewModelScope.launch {
+            // 모든 페이지 텍스트를 합쳐 단일 편집 버퍼로
+            val pages = _state.value.pageCount
+            val sb = StringBuilder()
+            for (i in 0 until pages) {
+                getPageText(i)?.let { sb.append(it) }
+            }
+            _state.update { it.copy(editMode = true, editedText = sb.toString()) }
+        }
+    }
+
+    fun exitEditMode(discardChanges: Boolean = true) {
+        _state.update {
+            it.copy(editMode = false, editedText = if (discardChanges) "" else it.editedText)
+        }
+    }
+
+    fun onTextEdited(newText: String) {
+        _state.update { it.copy(editedText = newText) }
+    }
+
+    /** 기존 URI 에 덮어쓰기. */
+    fun saveCurrent() {
+        val s = _state.value
+        val uri = s.document?.uri ?: return
+        if (!s.editMode) return
+        _state.update { it.copy(saving = true, saveResult = null) }
+        viewModelScope.launch {
+            val result = runCatching { repo.writeTextContent(uri, s.editedText) }
+            _state.update {
+                it.copy(
+                    saving = false,
+                    saveResult = result.fold(
+                        onSuccess = { SaveResult.Success("저장 완료") },
+                        onFailure = { e -> SaveResult.Failure("저장 실패: ${e.message ?: e.javaClass.simpleName}") }
+                    )
+                )
+            }
+            // 저장 후 편집 모드 종료 + 파일 재로드
+            if (result.isSuccess) {
+                _state.update { it.copy(editMode = false) }
+                load(uri)
+            }
+        }
+    }
+
+    /** 새 URI 에 다른 이름으로 저장. UI 가 SAF CreateDocument 결과 URI 전달. */
+    fun saveAs(newUri: Uri) {
+        val s = _state.value
+        if (!s.editMode) return
+        _state.update { it.copy(saving = true, saveResult = null) }
+        viewModelScope.launch {
+            val result = runCatching { repo.writeTextContent(newUri, s.editedText) }
+            _state.update {
+                it.copy(
+                    saving = false,
+                    saveResult = result.fold(
+                        onSuccess = { SaveResult.Success("다른 이름으로 저장 완료") },
+                        onFailure = { e -> SaveResult.Failure("저장 실패: ${e.message ?: e.javaClass.simpleName}") }
+                    )
+                )
+            }
+            // 저장 성공 시 새 파일로 전환
+            if (result.isSuccess) {
+                _state.update { it.copy(editMode = false) }
+                load(newUri)
+            }
+        }
+    }
+
+    fun clearSaveResult() {
+        _state.update { it.copy(saveResult = null) }
     }
 
     private fun closeCurrentHandle() {

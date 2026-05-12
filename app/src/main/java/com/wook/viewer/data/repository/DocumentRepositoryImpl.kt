@@ -66,6 +66,10 @@ class DocumentRepositoryImpl @Inject constructor(
         bookmarkDao.removeAll(uriString)
     }
 
+    override suspend fun writeTextContent(uri: Uri, content: String, charset: String) {
+        saf.writeText(uri, content, charset)
+    }
+
     // ---- Bookmarks ----
 
     override fun observeBookmarks(uriString: String): Flow<List<Bookmark>> =

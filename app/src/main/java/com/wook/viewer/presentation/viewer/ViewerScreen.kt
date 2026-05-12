@@ -3,6 +3,9 @@ package com.wook.viewer.presentation.viewer
 import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
@@ -73,6 +77,8 @@ import com.wook.viewer.presentation.theme.TextOnDarkMuted
 import com.wook.viewer.domain.model.PageElement
 import com.wook.viewer.presentation.viewer.components.BitmapPageInline
 import com.wook.viewer.presentation.viewer.components.BookmarksSheet
+import com.wook.viewer.presentation.viewer.components.EditTopBar
+import com.wook.viewer.presentation.viewer.components.EditableTextPage
 import com.wook.viewer.presentation.viewer.components.LimitationsDialog
 import com.wook.viewer.presentation.viewer.components.OutlineSheet
 import com.wook.viewer.presentation.viewer.components.PasswordPromptDialog
@@ -126,6 +132,31 @@ fun ViewerScreen(
         if (uri != null) vm.load(uri)
     }
 
+    val ctx = LocalContext.current
+
+    // SAF "다른 이름으로 저장" 런처 — 기본 MIME 은 text/plain, .md 도 동일 처리
+    val saveAsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { newUri: Uri? ->
+        if (newUri != null) vm.saveAs(newUri)
+    }
+
+    // 편집 모드 중 시스템 백 → 화면 종료가 아닌 편집 취소로
+    BackHandler(enabled = state.editMode && !state.saving) {
+        vm.exitEditMode(discardChanges = true)
+    }
+
+    // 저장 결과 Toast — Success/Failure 모두 표시 후 clear
+    LaunchedEffect(state.saveResult) {
+        val r = state.saveResult ?: return@LaunchedEffect
+        val msg = when (r) {
+            is SaveResult.Success -> r.message
+            is SaveResult.Failure -> r.message
+        }
+        Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+        vm.clearSaveResult()
+    }
+
     val format = state.document?.format
     val isTextFormat = format?.fidelity == RenderingFidelity.TEXT_ONLY
     // PDF 텍스트 모드: 비트맵 대신 텍스트로 표시 → 선택/복사 가능
@@ -146,8 +177,18 @@ fun ViewerScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        if (state.searchActive) {
-            SearchBar(
+        when {
+            state.editMode -> EditTopBar(
+                documentName = state.document?.displayName ?: stringResource(R.string.title_viewer),
+                saving = state.saving,
+                onCancel = { vm.exitEditMode(discardChanges = true) },
+                onSave = vm::saveCurrent,
+                onSaveAs = {
+                    // 기본 파일명 — 현재 이름 그대로 (SAF 가 사용자에게 변경 기회 제공)
+                    saveAsLauncher.launch(state.document?.displayName ?: "document.txt")
+                }
+            )
+            state.searchActive -> SearchBar(
                 query = state.searchQuery,
                 matchCount = state.searchMatches.size,
                 currentMatchIndex = state.currentMatchIndex,
@@ -157,8 +198,7 @@ fun ViewerScreen(
                 onNext = vm::goToNextMatch,
                 onClose = { vm.setSearchActive(false) }
             )
-        } else {
-            ViewerTopBar(
+            else -> ViewerTopBar(
                 doc = state.document,
                 pageCount = state.pageCount,
                 searchSupported = vm.isSearchSupported,
@@ -170,6 +210,7 @@ fun ViewerScreen(
                 bookmarkCount = state.bookmarks.size,
                 showPdfModeToggle = format == DocumentFormat.PDF,
                 pdfInTextMode = isPdfTextMode,
+                showEditToggle = vm.isEditableFormat() && state.error == null,
                 barColor = barColor,
                 textColor = textColor,
                 mutedColor = mutedColor,
@@ -181,7 +222,8 @@ fun ViewerScreen(
                 onToggleThumbnails = { showThumbnails = !showThumbnails },
                 onToggleBookmark = vm::toggleCurrentBookmark,
                 onShowBookmarks = { showBookmarksSheet = true },
-                onTogglePdfMode = vm::togglePdfViewMode
+                onTogglePdfMode = vm::togglePdfViewMode,
+                onEnterEdit = vm::enterEditMode
             )
         }
 
@@ -212,6 +254,11 @@ fun ViewerScreen(
             when {
                 state.loading -> LoadingView(state.document?.format, isDarkBitmap)
                 state.error != null -> ErrorView(state.error!!, state.document, isDarkBitmap)
+                state.editMode -> EditableTextPage(
+                    text = state.editedText,
+                    onTextChange = vm::onTextEdited,
+                    modifier = Modifier.fillMaxSize()
+                )
                 state.pageCount > 0 && showThumbnails -> ThumbnailGrid(
                     pageCount = state.pageCount,
                     currentIndex = state.currentIndex,
@@ -282,7 +329,6 @@ fun ViewerScreen(
     }
 
     if (showShareSheet) {
-        val ctx = LocalContext.current
         val scope = rememberCoroutineScope()
         val doc = state.document
         ShareSheet(
@@ -339,6 +385,7 @@ private fun ViewerTopBar(
     bookmarkCount: Int,
     showPdfModeToggle: Boolean,
     pdfInTextMode: Boolean,
+    showEditToggle: Boolean,
     barColor: Color,
     textColor: Color,
     mutedColor: Color,
@@ -350,7 +397,8 @@ private fun ViewerTopBar(
     onToggleThumbnails: () -> Unit,
     onToggleBookmark: () -> Unit,
     onShowBookmarks: () -> Unit,
-    onTogglePdfMode: () -> Unit
+    onTogglePdfMode: () -> Unit,
+    onEnterEdit: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -391,6 +439,12 @@ private fun ViewerTopBar(
                     contentDescription = if (pdfInTextMode) "비트맵 모드" else "텍스트 모드",
                     tint = textColor
                 )
+            }
+            Spacer(Modifier.width(4.dp))
+        }
+        if (showEditToggle) {
+            TopBarIconButton(iconBg = iconBg, onClick = onEnterEdit) {
+                Icon(Icons.Filled.Edit, contentDescription = "편집", tint = textColor)
             }
             Spacer(Modifier.width(4.dp))
         }
