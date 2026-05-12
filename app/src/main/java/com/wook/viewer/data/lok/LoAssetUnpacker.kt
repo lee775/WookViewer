@@ -41,35 +41,38 @@ internal object LoAssetUnpacker {
         }
 
         Timber.i("LO assets unpack 시작: ${topLevel.size} top-level entries → $filesDir")
+        topLevel.forEach { Timber.d("  - $it") }
         return runCatching {
+            var fileCount = 0
             for (entry in topLevel) {
-                extractTree(am, "$SOURCE_ROOT/$entry", File(filesDir, entry))
+                val rootPath = "$SOURCE_ROOT/$entry"
+                fileCount += extractTree(am, rootPath, File(filesDir, entry))
             }
             marker.writeText(System.currentTimeMillis().toString())
-            Timber.i("LO assets unpack 완료")
+            Timber.i("LO assets unpack 완료: 총 $fileCount 개 파일")
             true
         }.getOrElse { e ->
             Timber.e(e, "LO assets unpack 실패")
-            // 부분 unpack 상태 정리
             runCatching { marker.delete() }
             false
         }
     }
 
-    private fun extractTree(am: AssetManager, srcPath: String, destFile: File) {
+    /** @return 추출한 leaf 파일 개수. */
+    private fun extractTree(am: AssetManager, srcPath: String, destFile: File): Int {
         val children = runCatching { am.list(srcPath).orEmpty() }.getOrDefault(emptyArray())
         if (children.isEmpty()) {
-            // leaf — 파일로 복사
             destFile.parentFile?.mkdirs()
             am.open(srcPath).use { input ->
                 destFile.outputStream().use { out -> input.copyTo(out) }
             }
-        } else {
-            // 디렉토리 — 재귀
-            destFile.mkdirs()
-            for (child in children) {
-                extractTree(am, "$srcPath/$child", File(destFile, child))
-            }
+            return 1
         }
+        destFile.mkdirs()
+        var count = 0
+        for (child in children) {
+            count += extractTree(am, "$srcPath/$child", File(destFile, child))
+        }
+        return count
     }
 }

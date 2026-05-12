@@ -44,14 +44,18 @@ class LokAvailability @Inject constructor() {
      * LibreOfficeKit.NativeLibLoader.load() 와 동일한 순서로 로드 시도.
      * 어느 단계든 실패하면 false 반환 — 안전하게 폴백.
      */
-    private fun loadAllLibs(): Boolean = runCatching {
+    private fun loadAllLibs(): Boolean {
         for (lib in REQUIRED_LIBS) {
-            System.loadLibrary(lib)
+            try {
+                Timber.d("loading lib: $lib")
+                System.loadLibrary(lib)
+            } catch (e: Throwable) {
+                Timber.i("LO 라이브러리 로드 실패: $lib — ${e.javaClass.simpleName}: ${e.message}")
+                return false
+            }
         }
-        true
-    }.getOrElse { e ->
-        Timber.i("LibreOfficeKit 네이티브 라이브러리 미가용: ${e.javaClass.simpleName}: ${e.message}")
-        false
+        Timber.i("LO 사전 라이브러리 ${REQUIRED_LIBS.size}개 모두 로드 OK")
+        return true
     }
 
     private companion object {

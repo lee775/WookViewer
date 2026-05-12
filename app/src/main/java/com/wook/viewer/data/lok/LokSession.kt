@@ -62,62 +62,67 @@ class LokSession @Inject constructor(
      * Activity 컨텍스트가 필요하므로 MainActivity.onCreate 에서 호출.
      */
     fun tryInit(activity: Activity) {
-        if (_state.value != State.Idle) return  // 이미 진행 또는 종료 상태
+        Timber.i("LokSession.tryInit called, current state=${_state.value}")
+        if (_state.value != State.Idle) return
         _state.value = State.Initializing
 
         appScope.launch(Dispatchers.IO) {
+            Timber.i("LokSession.tryInit coroutine started on IO dispatcher")
             initMutex.withLock {
                 if (_state.value != State.Initializing) return@withLock
 
-                if (!lokAvailability.isAvailable()) {
+                Timber.i("[step 1/4] checking NSS + c++_shared libs availability")
+                val available = lokAvailability.isAvailable()
+                Timber.i("[step 1/4] lokAvailability.isAvailable() = $available")
+                if (!available) {
                     _state.value = State.Unavailable
                     return@withLock
                 }
 
-                // LO native가 init 시점에 filesDir에서 찾는 파일들(services.rdb 등)을
-                // assets/unpack/ → filesDir 로 복사. 이 단계 빼면 init 시 SIGSEGV.
+                Timber.i("[step 2/4] unpacking LO assets")
                 val unpacked = runCatching { LoAssetUnpacker.ensureUnpacked(activity) }
                     .getOrElse { e ->
-                        Timber.e(e, "LO assets unpack 예외")
+                        Timber.e(e, "[step 2/4] LO assets unpack 예외")
                         false
                     }
+                Timber.i("[step 2/4] ensureUnpacked = $unpacked")
                 if (!unpacked) {
-                    Timber.w("LO assets unpack 실패 — init 시도 중단")
                     _state.value = State.Unavailable
                     return@withLock
                 }
 
-                // unpack 완료 후에야 lo-native-code 안전 로드. JNI_OnLoad 가 filesDir 의
-                // services.rdb 등을 참조할 수 있음.
-                val loLibLoaded = runCatching { System.loadLibrary("lo-native-code"); true }
-                    .getOrElse { e ->
-                        Timber.e(e, "lo-native-code.so 로드 실패")
-                        false
-                    }
+                Timber.i("[step 3/4] loading lo-native-code.so (JNI_OnLoad will run)")
+                val loLibLoaded = runCatching {
+                    System.loadLibrary("lo-native-code")
+                    true
+                }.getOrElse { e ->
+                    Timber.e(e, "[step 3/4] lo-native-code.so 로드 실패")
+                    false
+                }
+                Timber.i("[step 3/4] lo-native-code loaded = $loLibLoaded")
                 if (!loLibLoaded) {
                     _state.value = State.Unavailable
                     return@withLock
                 }
 
+                Timber.i("[step 4/4] LibreOfficeKit.init + Office handle")
                 val ok = runCatching {
-                    // LibreOfficeKit.init 은 내부적으로 main thread 의존성 없음 (assets 읽기 등).
-                    // 그러나 첫 호출이 무겁기 때문에 IO dispatcher 에서 실행.
-                    // 이 시점에 LibreOfficeKit 클래스가 처음 참조되어 static block 의
-                    // NativeLibLoader.load() 가 실행되지만, lo-native-code 는 이미 위에서
-                    // 로드돼 있어 idempotent no-op.
                     LibreOfficeKit.init(activity)
+                    Timber.i("[step 4/4] LibreOfficeKit.init returned")
                     val handle = LibreOfficeKit.getLibreOfficeKitHandle()
+                    Timber.i("[step 4/4] handle = $handle")
                     requireNotNull(handle) { "LibreOfficeKit handle is null after init" }
                     val office = Office(handle)
                     officeRef.set(office)
-                    Timber.i("LibreOfficeKit 초기화 완료")
+                    Timber.i("LibreOfficeKit 초기화 완료 ✅")
                     true
                 }.getOrElse { e ->
-                    Timber.e(e, "LibreOfficeKit 초기화 실패")
+                    Timber.e(e, "[step 4/4] LibreOfficeKit 초기화 실패")
                     false
                 }
 
                 _state.value = if (ok) State.Ready else State.Unavailable
+                Timber.i("LokSession final state = ${_state.value}")
             }
         }
     }
