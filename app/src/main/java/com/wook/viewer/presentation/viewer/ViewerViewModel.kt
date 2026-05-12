@@ -48,6 +48,12 @@ data class ViewerUiState(
     // 섹션(XLSX 시트 등) — null이면 일반 페이지 모델
     val sectionLabels: List<String>? = null,
 
+    /**
+     * 비트맵 렌더링 강제. true 면 ViewerScreen 이 BitmapPageInline 사용 (LOK 활성 시).
+     * false 면 포맷 기본 fidelity 따름 (TEXT_ONLY 는 TextPageInline).
+     */
+    val useBitmapRendering: Boolean = false,
+
     // 문서 내부 목차 (PDF Outline 등) — null/빈 리스트면 아이콘 미노출
     val outline: List<com.wook.viewer.domain.model.OutlineNode>? = null,
 
@@ -158,9 +164,12 @@ class ViewerViewModel @Inject constructor(
                 val count = r.pageCount(h)
                 val labels = r.getSectionLabels(h)
                 val outline = r.getOutline(h)
+                // LOK 렌더러는 모든 포맷을 비트맵으로 그림 — ViewerScreen 분기 강제
+                val useBitmap = r::class.simpleName == "LokDocumentRenderer"
                 _state.update {
                     it.copy(
                         loading = false,
+                        useBitmapRendering = useBitmap,
                         pageCount = count,
                         currentIndex = 0,
                         sectionLabels = labels,

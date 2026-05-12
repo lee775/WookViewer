@@ -130,7 +130,8 @@ fun ViewerScreen(
     val isTextFormat = format?.fidelity == RenderingFidelity.TEXT_ONLY
     // PDF 텍스트 모드: 비트맵 대신 텍스트로 표시 → 선택/복사 가능
     val isPdfTextMode = format == DocumentFormat.PDF && state.pdfViewMode == PdfViewMode.TEXT
-    val isTextDisplay = isTextFormat || isPdfTextMode
+    // LOK 렌더러는 모든 포맷을 비트맵으로 그림 — TEXT_ONLY 분기 우회
+    val isTextDisplay = (isTextFormat || isPdfTextMode) && !state.useBitmapRendering
     val showBanner = isTextFormat && !noticeDismissed && state.error == null && !state.searchActive
 
     val isDarkBitmap = !isTextDisplay
