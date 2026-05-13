@@ -83,6 +83,7 @@ import com.wook.viewer.presentation.viewer.components.EditableTextPage
 import com.wook.viewer.presentation.viewer.components.ExportFormatDialog
 import com.wook.viewer.presentation.viewer.components.ExportOption
 import com.wook.viewer.presentation.viewer.components.OfficeEditOverlay
+import com.wook.viewer.presentation.viewer.components.OfficeFormattingToolbar
 import com.wook.viewer.presentation.viewer.components.LimitationsDialog
 import com.wook.viewer.presentation.viewer.components.OutlineSheet
 import com.wook.viewer.presentation.viewer.components.PasswordPromptDialog
@@ -270,6 +271,13 @@ fun ViewerScreen(
             )
         }
 
+        // Office 편집 모드일 때 EditTopBar 바로 아래 서식 도구바
+        if (state.officeEditMode) {
+            OfficeFormattingToolbar(
+                onUnoCommand = vm::postOfficeUnoCommand
+            )
+        }
+
         if (showBanner) {
             RenderingNoticeBanner(
                 onMoreInfo = { showLimitationsDialog = true },
@@ -326,6 +334,7 @@ fun ViewerScreen(
                     pageBgColor = bgColor,
                     invalidationTick = state.invalidationTick,
                     officeEditMode = state.officeEditMode,
+                    officeCursor = state.officeCursor,
                     onOfficeTap = vm::postOfficeTap,
                     onOfficeChar = vm::postOfficeChar,
                     onOfficeSpecialKey = vm::postOfficeSpecialKey
@@ -608,6 +617,7 @@ private fun PageContent(
     pageBgColor: Color,
     invalidationTick: Long,
     officeEditMode: Boolean,
+    officeCursor: com.wook.viewer.render.lok.LokDocumentRenderer.CursorState?,
     onOfficeTap: (pageIndex: Int, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit,
     onOfficeChar: (codePoint: Int) -> Unit,
     onOfficeSpecialKey: (lokKeyCode: Int) -> Unit
@@ -654,11 +664,19 @@ private fun PageContent(
                     activeMatch = activeMatchRange(pageIndex)
                 )
             } else {
+                // 커서가 이 페이지에 속할 때만 표시
+                val cursorForThisPage = officeCursor?.takeIf {
+                    it.visible && it.partIndex == pageIndex
+                }
                 BitmapItem(
                     pageIndex = pageIndex,
                     loadBitmap = loadBitmap,
                     invalidationTick = invalidationTick,
                     officeEditMode = officeEditMode,
+                    cursorXFrac = cursorForThisPage?.xFrac,
+                    cursorYFrac = cursorForThisPage?.yFrac,
+                    cursorWidthFrac = cursorForThisPage?.widthFrac,
+                    cursorHeightFrac = cursorForThisPage?.heightFrac,
                     onTap = { x, y, w, h -> onOfficeTap(pageIndex, x, y, w, h) },
                     onChar = onOfficeChar,
                     onSpecialKey = onOfficeSpecialKey
@@ -677,6 +695,10 @@ private fun BitmapItem(
     loadBitmap: suspend (index: Int, widthPx: Int) -> Bitmap?,
     invalidationTick: Long,
     officeEditMode: Boolean,
+    cursorXFrac: Float?,
+    cursorYFrac: Float?,
+    cursorWidthFrac: Float?,
+    cursorHeightFrac: Float?,
     onTap: (xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit,
     onChar: (codePoint: Int) -> Unit,
     onSpecialKey: (lokKeyCode: Int) -> Unit
@@ -695,6 +717,10 @@ private fun BitmapItem(
                 onTap = onTap,
                 onChar = onChar,
                 onSpecialKey = onSpecialKey,
+                cursorXFrac = cursorXFrac,
+                cursorYFrac = cursorYFrac,
+                cursorWidthFrac = cursorWidthFrac,
+                cursorHeightFrac = cursorHeightFrac,
                 modifier = Modifier.matchParentSize()
             )
         }

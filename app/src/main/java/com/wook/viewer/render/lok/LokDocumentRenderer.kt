@@ -14,11 +14,16 @@ import com.wook.viewer.domain.repository.DocumentRenderer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import org.libreoffice.kit.DirectBufferAllocator
 import org.libreoffice.kit.Document
 import timber.log.Timber
@@ -68,6 +73,22 @@ class LokDocumentRenderer @Inject constructor(
         _invalidations.tryEmit(System.nanoTime())
     }
 
+    /**
+     * 현재 편집 중인 part 의 LOK 커서 위치 (정규화 0..1 비율).
+     * null = 커서 없음 / 보이지 않음.
+     */
+    data class CursorState(
+        val xFrac: Float,
+        val yFrac: Float,
+        val widthFrac: Float,
+        val heightFrac: Float,
+        val partIndex: Int,
+        val visible: Boolean
+    )
+
+    private val _cursor = MutableStateFlow<CursorState?>(null)
+    val cursor: StateFlow<CursorState?> = _cursor.asStateFlow()
+
     private class Handle(
         override val uri: Uri,
         val document: Document,
@@ -75,7 +96,11 @@ class LokDocumentRenderer @Inject constructor(
         val docType: Int,
         val partCount: Int,
         val mutex: Mutex = Mutex(),
-        val bitmapCache: BitmapLruCache = BitmapLruCache(BITMAP_CACHE_SIZE_BYTES)
+        val bitmapCache: BitmapLruCache = BitmapLruCache(BITMAP_CACHE_SIZE_BYTES),
+        /** paintTile/postMouseTap 에서 setPart 후 갱신 — callback 좌표 정규화에 사용. */
+        val lastDocWidthTwips: AtomicLong = AtomicLong(0),
+        val lastDocHeightTwips: AtomicLong = AtomicLong(0),
+        val lastEditPart: AtomicInteger = AtomicInteger(0),
     ) : DocumentHandle
 
     private data class CacheKey(val partIndex: Int, val widthPx: Int)
@@ -129,25 +154,56 @@ class LokDocumentRenderer @Inject constructor(
             runCatching { document.initializeForRendering() }
                 .onFailure { Timber.w(it, "initializeForRendering 실패 — 일부 렌더 결함 가능") }
 
-            // tile 무효화 callback — 편집으로 화면이 변할 때 캐시 비우고 UI 알림
-            runCatching {
-                document.setMessageCallback { signalNumber, payload ->
-                    if (signalNumber == Document.CALLBACK_INVALIDATE_TILES) {
-                        Timber.v("LOK invalidate-tiles payload=$payload")
-                        // 전체 캐시 비우는 단순 전략 — 정확도 우선, 성능은 차후 최적화
-                        // (callback 은 LOK 스레드에서 호출되므로 mutex 없이 evictAll 안전하지 않을 수
-                        // 있음 → 이벤트만 emit 하고 실제 evict 는 main coroutine 에서 처리)
-                        emitInvalidation()
-                    }
-                }
-            }.onFailure { Timber.w(it, "setMessageCallback 실패 — 편집 후 재렌더 안 될 수 있음") }
-
             val docType = runCatching { document.documentType }.getOrDefault(Document.DOCTYPE_OTHER)
             val partCount = runCatching { document.parts.coerceAtLeast(1) }.getOrDefault(1)
             Timber.i("LOK 문서 열기: type=$docType, parts=$partCount, file=${tempFile.name}")
 
-            Handle(uri, document, tempFile, docType, partCount)
+            val handle = Handle(uri, document, tempFile, docType, partCount)
+
+            // message callback — tile invalidation + cursor 위치/표시 추적
+            runCatching {
+                document.setMessageCallback { signalNumber, payload ->
+                    when (signalNumber) {
+                        Document.CALLBACK_INVALIDATE_TILES -> emitInvalidation()
+                        Document.CALLBACK_INVALIDATE_VISIBLE_CURSOR -> {
+                            updateCursorFromPayload(handle, payload)
+                        }
+                        Document.CALLBACK_CURSOR_VISIBLE -> {
+                            val vis = payload?.trim() == "true"
+                            _cursor.value = _cursor.value?.copy(visible = vis)
+                        }
+                    }
+                }
+            }.onFailure { Timber.w(it, "setMessageCallback 실패 — 편집 후 재렌더 안 될 수 있음") }
+
+            handle
         }
+
+    /**
+     * INVALIDATE_VISIBLE_CURSOR payload 형식: "x, y, width, height" (twips).
+     * paintTile 에서 캐시한 doc 크기를 써서 정규화된 비율로 변환.
+     */
+    private fun updateCursorFromPayload(handle: Handle, payload: String?) {
+        if (payload.isNullOrBlank()) return
+        val nums = payload.split(',').mapNotNull { it.trim().toIntOrNull() }
+        if (nums.size < 4) return
+        val dw = handle.lastDocWidthTwips.get()
+        val dh = handle.lastDocHeightTwips.get()
+        if (dw <= 0 || dh <= 0) return  // paintTile 한 번도 안 됐으면 변환 불가
+        val xF = nums[0].toFloat() / dw
+        val yF = nums[1].toFloat() / dh
+        // 가로 폭이 0 인 경우(보통 텍스트 커서)는 1px 정도로 보이게 최소값
+        val wF = (nums[2].coerceAtLeast(20)).toFloat() / dw
+        val hF = nums[3].toFloat() / dh
+        _cursor.value = CursorState(
+            xFrac = xF.coerceIn(0f, 1f),
+            yFrac = yF.coerceIn(0f, 1f),
+            widthFrac = wF.coerceAtLeast(0.001f),
+            heightFrac = hF.coerceAtLeast(0.002f),
+            partIndex = handle.lastEditPart.get(),
+            visible = true
+        )
+    }
 
     /** 모든 캐시된 비트맵 무효화. tile invalidation 시 VM 이 호출. */
     suspend fun invalidateAll(handle: DocumentHandle) {
@@ -174,9 +230,14 @@ class LokDocumentRenderer @Inject constructor(
         return withContext(Dispatchers.IO) {
             h.mutex.withLock {
                 runCatching {
-                    if (h.partCount > 1) h.document.setPart(pageIndex.coerceIn(0, h.partCount - 1))
+                    if (h.partCount > 1) {
+                        h.document.setPart(pageIndex.coerceIn(0, h.partCount - 1))
+                    }
+                    h.lastEditPart.set(pageIndex.coerceIn(0, (h.partCount - 1).coerceAtLeast(0)))
                     val docW = h.document.documentWidth.toInt()
                     val docH = h.document.documentHeight.toInt()
+                    h.lastDocWidthTwips.set(docW.toLong())
+                    h.lastDocHeightTwips.set(docH.toLong())
                     if (docW <= 0 || docH <= 0) return@runCatching false
                     val xTwips = (xPx.toLong() * docW / widthPx).toInt()
                     val yTwips = (yPx.toLong() * docH / heightPx).toInt()
@@ -192,6 +253,21 @@ class LokDocumentRenderer @Inject constructor(
                     )
                     true
                 }.onFailure { Timber.w(it, "postMouseTap 실패") }.getOrDefault(false)
+            }
+        }
+    }
+
+    /**
+     * `.uno:Bold` 같은 LOK UNO 명령 실행. 서식 도구바에서 사용.
+     */
+    suspend fun postUnoCommand(handle: DocumentHandle, command: String): Boolean {
+        val h = handle as Handle
+        return withContext(Dispatchers.IO) {
+            h.mutex.withLock {
+                runCatching {
+                    h.document.postUnoCommand(command, null, false)
+                    true
+                }.onFailure { Timber.w(it, "postUnoCommand 실패: $command") }.getOrDefault(false)
             }
         }
     }
@@ -288,6 +364,9 @@ class LokDocumentRenderer @Inject constructor(
 
             val docWidthTwips = runCatching { h.document.documentWidth }.getOrDefault(0L).toInt()
             val docHeightTwips = runCatching { h.document.documentHeight }.getOrDefault(0L).toInt()
+            // 커서 콜백이 좌표 정규화에 사용 — paintTile 마다 갱신
+            h.lastDocWidthTwips.set(docWidthTwips.toLong())
+            h.lastDocHeightTwips.set(docHeightTwips.toLong())
             if (docWidthTwips <= 0 || docHeightTwips <= 0) {
                 throw DocumentError.Corrupted(
                     IllegalStateException("LOK 문서 크기 0: w=$docWidthTwips h=$docHeightTwips")

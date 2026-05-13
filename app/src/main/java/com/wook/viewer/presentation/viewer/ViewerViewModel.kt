@@ -79,6 +79,8 @@ data class ViewerUiState(
     val officeEditMode: Boolean = false,
     /** Office 편집 시 tile 무효화 카운터 — 증가 시 BitmapItem 강제 재렌더. */
     val invalidationTick: Long = 0L,
+    /** LOK 가 알려준 현재 커서 위치 (정규화 비율). null = 없음/숨김. */
+    val officeCursor: LokDocumentRenderer.CursorState? = null,
     /** 저장 진행 상태. */
     val saving: Boolean = false,
     /** 저장 결과 메시지 (Snackbar 등). */
@@ -207,13 +209,18 @@ class ViewerViewModel @Inject constructor(
                         outline = outline
                     )
                 }
-                // LOK 일 때 tile invalidation 구독 — 편집 후 자동 재렌더
+                // LOK 일 때 tile invalidation + 커서 위치 구독
                 if (r is LokDocumentRenderer) {
                     viewModelScope.launch {
                         r.invalidations.collect { tick ->
                             // 캐시 비우고 UI tick 증가 → BitmapItem 재구성
                             runCatching { r.invalidateAll(h) }
                             _state.update { it.copy(invalidationTick = tick) }
+                        }
+                    }
+                    viewModelScope.launch {
+                        r.cursor.collect { c ->
+                            _state.update { it.copy(officeCursor = c) }
                         }
                     }
                 }
@@ -582,6 +589,13 @@ class ViewerViewModel @Inject constructor(
         val r = renderer as? LokDocumentRenderer ?: return
         val h = handle ?: return
         viewModelScope.launch { r.postKey(h, 0, lokKeyCode) }
+    }
+
+    /** `.uno:Bold`, `.uno:Italic`, `.uno:Underline` 등 서식 명령. */
+    fun postOfficeUnoCommand(command: String) {
+        val r = renderer as? LokDocumentRenderer ?: return
+        val h = handle ?: return
+        viewModelScope.launch { r.postUnoCommand(h, command) }
     }
 
     /** 현재 문서를 원본 URI 에 저장 (overwrite). LOK 가 임시 파일에 저장 후 SAF 복사. */

@@ -1,8 +1,16 @@
 package com.wook.viewer.presentation.viewer.components
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -10,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -20,7 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -30,7 +39,6 @@ import androidx.compose.ui.unit.dp
 
 /**
  * LOK 특수 키 코드 — `org/libreoffice/vcl/keycodes.hxx` 와 동일.
- * postKeyEvent 의 keyCode 인자로 전달.
  */
 internal object LokKey {
     const val RETURN = 1280
@@ -44,16 +52,19 @@ internal object LokKey {
  * Office 편집 모드 전용 입력 오버레이.
  *
  * 동작:
- *  - 화면 탭 → [onTap] 호출 (LOK 커서 위치 설정)
- *  - IME 키 입력 → [onChar] (일반 문자) 또는 [onSpecialKey] (Backspace/Enter)
+ *  - 화면 탭 → [onTap] (LOK 커서 위치)
+ *  - IME 입력 → [onChar] / [onSpecialKey]
+ *  - LOK 가 알려준 커서 위치 (정규화 비율) → 시각적 표시
  *
- * 한계 (v0.9.2 PoC):
- *  - `KeyboardType.Ascii` 로 IME 강제 → 한글 IME 미지원
- *  - 시각적 커서 표시 없음 (LOK 내부 커서만, UI 오버레이는 투명)
- *  - 텍스트 선택/긴 탭 미지원
+ * IME 처리 — composition-aware:
+ *  - BasicTextField 의 [TextFieldValue.composition] 으로 IME 조합 중 구간 식별
+ *  - "확정된(committed) 텍스트" 길이 변화만 LOK 로 전송 → 한글 자모 중간 단계 전송 안 함
+ *  - composition 이 없는 안정 상태가 되면 버퍼 리셋
  *
- * 구현 트릭 — sentinel 문자 ("X") 를 항상 BasicTextField 에 유지하고
- * onValueChange 에서 "X" 와 비교해 추가/삭제를 감지. 매 이벤트 후 sentinel 로 리셋.
+ * @param cursorXFrac LOK 커서의 페이지 가로 비율 (0..1). null 이면 커서 미표시.
+ * @param cursorYFrac 페이지 세로 비율
+ * @param cursorWidthFrac 커서 폭 비율 (보통 매우 작음, 최소값 보장)
+ * @param cursorHeightFrac 커서 높이 비율 (글자 높이 정도)
  */
 @Composable
 fun OfficeEditOverlay(
@@ -61,11 +72,16 @@ fun OfficeEditOverlay(
     onTap: (xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit,
     onChar: (codePoint: Int) -> Unit,
     onSpecialKey: (lokKeyCode: Int) -> Unit,
+    cursorXFrac: Float? = null,
+    cursorYFrac: Float? = null,
+    cursorWidthFrac: Float? = null,
+    cursorHeightFrac: Float? = null,
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
-    val sentinel = remember { TextFieldValue("X", selection = TextRange(1)) }
-    var fieldValue by remember { mutableStateOf(sentinel) }
+    var fieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    // 확정된 텍스트(composition 제외) 길이 — diff 기준
+    var committedLen by remember { mutableIntStateOf(0) }
     var size by remember { mutableStateOf(IntSize.Zero) }
 
     LaunchedEffect(pageIndex) {
@@ -90,33 +106,53 @@ fun OfficeEditOverlay(
                 }
             }
     ) {
-        // 보이지 않는 BasicTextField — IME 키 캡처 전용. 1dp 크기 + 투명 텍스트.
+        // IME 키 캡처 전용 — 1dp 투명 BasicTextField. composition 추적해 한글 지원.
         BasicTextField(
             value = fieldValue,
             onValueChange = { newValue ->
                 val text = newValue.text
+                val comp = newValue.composition
+                val committed = if (comp != null) {
+                    text.removeRange(comp.min, comp.max)
+                } else {
+                    text
+                }
+                val newCommittedLen = committed.length
+
                 when {
-                    // 문자가 추가됨 — sentinel "X" 이후의 글자들을 LOK 로 전송
-                    text.length > 1 -> {
-                        text.substring(1).forEach { ch -> onChar(ch.code) }
+                    newCommittedLen > committedLen -> {
+                        // 확정된 새 글자 → LOK 로 codePoint 전송
+                        // 서로게이트 페어(이모지 등) 처리: codePointAt 으로 안전하게
+                        var i = committedLen
+                        while (i < committed.length) {
+                            val cp = committed.codePointAt(i)
+                            onChar(cp)
+                            i += Character.charCount(cp)
+                        }
                     }
-                    // sentinel 이 삭제됨 — backspace
-                    text.isEmpty() -> {
-                        onSpecialKey(LokKey.BACKSPACE)
-                    }
-                    // 길이 1 인데 "X" 가 아님 → 사용자가 sentinel 자체를 다른 글자로 교체
-                    text != "X" -> {
-                        onSpecialKey(LokKey.BACKSPACE)
-                        onChar(text[0].code)
+                    newCommittedLen < committedLen -> {
+                        // 확정 글자 줄어듦 → 백스페이스로 동기화
+                        repeat(committedLen - newCommittedLen) {
+                            onSpecialKey(LokKey.BACKSPACE)
+                        }
                     }
                 }
-                fieldValue = sentinel
+
+                if (comp == null) {
+                    // 안정 상태 — 필드 비우고 다시 시작 (한글 IME 가 다음 입력을 새 조합으로 처리)
+                    fieldValue = TextFieldValue("")
+                    committedLen = 0
+                } else {
+                    // 조합 중 — 필드 상태 유지하고 IME 가 계속 조합하도록
+                    fieldValue = newValue
+                    committedLen = newCommittedLen
+                }
             },
             modifier = Modifier
                 .size(1.dp)
                 .focusRequester(focusRequester),
             keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Ascii,
+                keyboardType = KeyboardType.Text,
                 autoCorrect = false,
                 imeAction = ImeAction.Default
             ),
@@ -127,5 +163,44 @@ fun OfficeEditOverlay(
             textStyle = TextStyle(color = Color.Transparent),
             cursorBrush = SolidColor(Color.Transparent)
         )
+
+        // LOK 커서 시각화 — 깜빡이는 얇은 세로 막대
+        if (cursorXFrac != null && cursorYFrac != null && cursorHeightFrac != null &&
+            size.width > 0 && size.height > 0
+        ) {
+            BlinkingCursor(
+                xPx = (cursorXFrac * size.width).toInt(),
+                yPx = (cursorYFrac * size.height).toInt(),
+                heightPx = (cursorHeightFrac * size.height).toInt().coerceAtLeast(8),
+                widthPx = ((cursorWidthFrac ?: 0f) * size.width).toInt().coerceAtLeast(2)
+            )
+        }
     }
+}
+
+@Composable
+private fun BlinkingCursor(xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+    val density = LocalDensity.current
+    val xDp = with(density) { xPx.toDp() }
+    val yDp = with(density) { yPx.toDp() }
+    val wDp = with(density) { widthPx.toDp() }
+    val hDp = with(density) { heightPx.toDp() }
+
+    // 0.53 초 주기로 깜빡임
+    val transition = rememberInfiniteTransition(label = "lokCursor")
+    val alpha by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 530, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "blink"
+    )
+    Box(
+        modifier = Modifier
+            .offset(x = xDp, y = yDp)
+            .size(width = wDp, height = hDp)
+            .background(Color(0xFF1976D2).copy(alpha = alpha))
+    )
 }
