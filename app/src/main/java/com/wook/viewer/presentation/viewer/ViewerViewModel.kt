@@ -81,6 +81,8 @@ data class ViewerUiState(
     val invalidationTick: Long = 0L,
     /** LOK 가 알려준 현재 커서 위치 (정규화 비율). null = 없음/숨김. */
     val officeCursor: LokDocumentRenderer.CursorState? = null,
+    /** LOK 가 알려준 현재 텍스트 선택 영역들. */
+    val officeSelection: List<LokDocumentRenderer.SelectionRect> = emptyList(),
     /** 저장 진행 상태. */
     val saving: Boolean = false,
     /** 저장 결과 메시지 (Snackbar 등). */
@@ -221,6 +223,11 @@ class ViewerViewModel @Inject constructor(
                     viewModelScope.launch {
                         r.cursor.collect { c ->
                             _state.update { it.copy(officeCursor = c) }
+                        }
+                    }
+                    viewModelScope.launch {
+                        r.selection.collect { rects ->
+                            _state.update { it.copy(officeSelection = rects) }
                         }
                     }
                 }
@@ -596,6 +603,46 @@ class ViewerViewModel @Inject constructor(
         val r = renderer as? LokDocumentRenderer ?: return
         val h = handle ?: return
         viewModelScope.launch { r.postUnoCommand(h, command) }
+    }
+
+    /**
+     * 길게 누른 위치에 커서 이동 후 단어 선택.
+     * UI 가 long-press 검출 시 호출.
+     */
+    fun officeLongPressSelectWord(
+        pageIndex: Int,
+        xPx: Int,
+        yPx: Int,
+        widthPx: Int,
+        heightPx: Int
+    ) {
+        val r = renderer as? LokDocumentRenderer ?: return
+        val h = handle ?: return
+        viewModelScope.launch {
+            r.postMouseTap(h, pageIndex, xPx, yPx, widthPx, heightPx)
+            r.postUnoCommand(h, ".uno:SelectWord")
+        }
+    }
+
+    /**
+     * 현재 선택된 텍스트를 Android clipboard 로 복사.
+     * UI 가 ClipboardManager 를 직접 다룰 수 없으니 callback 으로 전달.
+     */
+    fun copyOfficeSelection(onCopied: (text: String?) -> Unit) {
+        val r = renderer as? LokDocumentRenderer ?: return
+        val h = handle ?: return
+        viewModelScope.launch {
+            val text = r.getSelectedText(h)
+            onCopied(text)
+        }
+    }
+
+    /** Android clipboard 텍스트를 LOK 에 붙여넣기. UI 가 ClipboardManager 에서 가져와 전달. */
+    fun pasteOfficeText(text: String) {
+        val r = renderer as? LokDocumentRenderer ?: return
+        val h = handle ?: return
+        if (text.isBlank()) return
+        viewModelScope.launch { r.pasteText(h, text) }
     }
 
     /** 현재 문서를 원본 URI 에 저장 (overwrite). LOK 가 임시 파일에 저장 후 SAF 복사. */

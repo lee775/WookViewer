@@ -1,13 +1,21 @@
 package com.wook.viewer.presentation.viewer.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.FormatAlignCenter
+import androidx.compose.material.icons.filled.FormatAlignJustify
+import androidx.compose.material.icons.filled.FormatAlignLeft
+import androidx.compose.material.icons.filled.FormatAlignRight
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListBulleted
@@ -28,17 +36,22 @@ import androidx.compose.ui.unit.dp
  * Office 편집 모드에서 표시되는 서식 도구바.
  * 각 버튼은 LOK `.uno:*` 명령을 전송 — LOK 가 현재 selection 에 적용.
  *
- * 미리 적용된 글꼴/크기 표시는 미구현 — 단순 토글만.
+ * 화면이 좁으면 가로 스크롤로 더 많은 버튼 노출.
+ * 복사/붙여넣기는 Android clipboard 와 브릿지 (onCopy / onPaste 콜백).
  */
 @Composable
 fun OfficeFormattingToolbar(
     onUnoCommand: (String) -> Unit,
+    onCopy: () -> Unit,
+    onPaste: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val scroll = rememberScrollState()
     Row(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant)
+            .horizontalScroll(scroll)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp)
@@ -46,9 +59,17 @@ fun OfficeFormattingToolbar(
         ToolButton(Icons.Filled.Undo, "실행 취소") { onUnoCommand(".uno:Undo") }
         ToolButton(Icons.Filled.Redo, "다시 실행") { onUnoCommand(".uno:Redo") }
         Spacer8()
+        ToolButton(Icons.Filled.ContentCopy, "복사") { onCopy() }
+        ToolButton(Icons.Filled.ContentPaste, "붙여넣기") { onPaste() }
+        Spacer8()
         ToolButton(Icons.Filled.FormatBold, "굵게") { onUnoCommand(".uno:Bold") }
         ToolButton(Icons.Filled.FormatItalic, "기울임") { onUnoCommand(".uno:Italic") }
         ToolButton(Icons.Filled.FormatUnderlined, "밑줄") { onUnoCommand(".uno:Underline") }
+        Spacer8()
+        ToolButton(Icons.Filled.FormatAlignLeft, "왼쪽 정렬") { onUnoCommand(".uno:LeftPara") }
+        ToolButton(Icons.Filled.FormatAlignCenter, "가운데 정렬") { onUnoCommand(".uno:CenterPara") }
+        ToolButton(Icons.Filled.FormatAlignRight, "오른쪽 정렬") { onUnoCommand(".uno:RightPara") }
+        ToolButton(Icons.Filled.FormatAlignJustify, "양쪽 정렬") { onUnoCommand(".uno:JustifyPara") }
         Spacer8()
         ToolButton(Icons.Filled.FormatListBulleted, "글머리 기호") {
             onUnoCommand(".uno:DefaultBullet")

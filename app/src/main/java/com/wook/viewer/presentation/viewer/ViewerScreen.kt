@@ -1,5 +1,8 @@
 package com.wook.viewer.presentation.viewer
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
@@ -274,7 +277,28 @@ fun ViewerScreen(
         // Office 편집 모드일 때 EditTopBar 바로 아래 서식 도구바
         if (state.officeEditMode) {
             OfficeFormattingToolbar(
-                onUnoCommand = vm::postOfficeUnoCommand
+                onUnoCommand = vm::postOfficeUnoCommand,
+                onCopy = {
+                    vm.copyOfficeSelection { text ->
+                        if (text.isNullOrEmpty()) {
+                            Toast.makeText(ctx, "선택된 텍스트가 없습니다", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("WookViewer", text))
+                            Toast.makeText(ctx, "복사되었습니다", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                onPaste = {
+                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val text = cm.primaryClip?.takeIf { it.itemCount > 0 }
+                        ?.getItemAt(0)?.coerceToText(ctx)?.toString()
+                    if (text.isNullOrEmpty()) {
+                        Toast.makeText(ctx, "클립보드가 비어있습니다", Toast.LENGTH_SHORT).show()
+                    } else {
+                        vm.pasteOfficeText(text)
+                    }
+                }
             )
         }
 
@@ -335,7 +359,9 @@ fun ViewerScreen(
                     invalidationTick = state.invalidationTick,
                     officeEditMode = state.officeEditMode,
                     officeCursor = state.officeCursor,
+                    officeSelection = state.officeSelection,
                     onOfficeTap = vm::postOfficeTap,
+                    onOfficeLongPress = vm::officeLongPressSelectWord,
                     onOfficeChar = vm::postOfficeChar,
                     onOfficeSpecialKey = vm::postOfficeSpecialKey
                 )
@@ -618,7 +644,9 @@ private fun PageContent(
     invalidationTick: Long,
     officeEditMode: Boolean,
     officeCursor: com.wook.viewer.render.lok.LokDocumentRenderer.CursorState?,
+    officeSelection: List<com.wook.viewer.render.lok.LokDocumentRenderer.SelectionRect>,
     onOfficeTap: (pageIndex: Int, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit,
+    onOfficeLongPress: (pageIndex: Int, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit,
     onOfficeChar: (codePoint: Int) -> Unit,
     onOfficeSpecialKey: (lokKeyCode: Int) -> Unit
 ) {
@@ -668,6 +696,12 @@ private fun PageContent(
                 val cursorForThisPage = officeCursor?.takeIf {
                     it.visible && it.partIndex == pageIndex
                 }
+                // 선택 영역도 이 페이지 것만
+                val selectionForThisPage = remember(officeSelection, pageIndex) {
+                    officeSelection
+                        .filter { it.partIndex == pageIndex }
+                        .map { floatArrayOf(it.xFrac, it.yFrac, it.widthFrac, it.heightFrac) }
+                }
                 BitmapItem(
                     pageIndex = pageIndex,
                     loadBitmap = loadBitmap,
@@ -677,7 +711,9 @@ private fun PageContent(
                     cursorYFrac = cursorForThisPage?.yFrac,
                     cursorWidthFrac = cursorForThisPage?.widthFrac,
                     cursorHeightFrac = cursorForThisPage?.heightFrac,
+                    selectionRects = selectionForThisPage,
                     onTap = { x, y, w, h -> onOfficeTap(pageIndex, x, y, w, h) },
+                    onLongPress = { x, y, w, h -> onOfficeLongPress(pageIndex, x, y, w, h) },
                     onChar = onOfficeChar,
                     onSpecialKey = onOfficeSpecialKey
                 )
@@ -699,7 +735,9 @@ private fun BitmapItem(
     cursorYFrac: Float?,
     cursorWidthFrac: Float?,
     cursorHeightFrac: Float?,
+    selectionRects: List<FloatArray>,
     onTap: (xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit,
+    onLongPress: (xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit,
     onChar: (codePoint: Int) -> Unit,
     onSpecialKey: (lokKeyCode: Int) -> Unit
 ) {
@@ -715,12 +753,14 @@ private fun BitmapItem(
             OfficeEditOverlay(
                 pageIndex = pageIndex,
                 onTap = onTap,
+                onLongPress = onLongPress,
                 onChar = onChar,
                 onSpecialKey = onSpecialKey,
                 cursorXFrac = cursorXFrac,
                 cursorYFrac = cursorYFrac,
                 cursorWidthFrac = cursorWidthFrac,
                 cursorHeightFrac = cursorHeightFrac,
+                selectionRects = selectionRects,
                 modifier = Modifier.matchParentSize()
             )
         }

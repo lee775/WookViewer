@@ -53,29 +53,28 @@ internal object LokKey {
  *
  * 동작:
  *  - 화면 탭 → [onTap] (LOK 커서 위치)
+ *  - 화면 길게 누름 → [onLongPress] (단어 선택)
  *  - IME 입력 → [onChar] / [onSpecialKey]
- *  - LOK 가 알려준 커서 위치 (정규화 비율) → 시각적 표시
+ *  - LOK 가 알려준 커서 + 선택 영역 → 시각적 표시
  *
  * IME 처리 — composition-aware:
  *  - BasicTextField 의 [TextFieldValue.composition] 으로 IME 조합 중 구간 식별
  *  - "확정된(committed) 텍스트" 길이 변화만 LOK 로 전송 → 한글 자모 중간 단계 전송 안 함
  *  - composition 이 없는 안정 상태가 되면 버퍼 리셋
- *
- * @param cursorXFrac LOK 커서의 페이지 가로 비율 (0..1). null 이면 커서 미표시.
- * @param cursorYFrac 페이지 세로 비율
- * @param cursorWidthFrac 커서 폭 비율 (보통 매우 작음, 최소값 보장)
- * @param cursorHeightFrac 커서 높이 비율 (글자 높이 정도)
  */
 @Composable
 fun OfficeEditOverlay(
     pageIndex: Int,
     onTap: (xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit,
+    onLongPress: (xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit,
     onChar: (codePoint: Int) -> Unit,
     onSpecialKey: (lokKeyCode: Int) -> Unit,
     cursorXFrac: Float? = null,
     cursorYFrac: Float? = null,
     cursorWidthFrac: Float? = null,
     cursorHeightFrac: Float? = null,
+    /** 페이지에 속한 선택 영역들 — 정규화 비율 (x,y,w,h). */
+    selectionRects: List<FloatArray> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -93,17 +92,30 @@ fun OfficeEditOverlay(
             .fillMaxSize()
             .onSizeChanged { size = it }
             .pointerInput(pageIndex) {
-                detectTapGestures { offset ->
-                    if (size.width > 0 && size.height > 0) {
-                        onTap(
-                            offset.x.toInt().coerceIn(0, size.width - 1),
-                            offset.y.toInt().coerceIn(0, size.height - 1),
-                            size.width,
-                            size.height
-                        )
+                detectTapGestures(
+                    onTap = { offset ->
+                        if (size.width > 0 && size.height > 0) {
+                            onTap(
+                                offset.x.toInt().coerceIn(0, size.width - 1),
+                                offset.y.toInt().coerceIn(0, size.height - 1),
+                                size.width,
+                                size.height
+                            )
+                        }
+                        runCatching { focusRequester.requestFocus() }
+                    },
+                    onLongPress = { offset ->
+                        if (size.width > 0 && size.height > 0) {
+                            onLongPress(
+                                offset.x.toInt().coerceIn(0, size.width - 1),
+                                offset.y.toInt().coerceIn(0, size.height - 1),
+                                size.width,
+                                size.height
+                            )
+                        }
+                        runCatching { focusRequester.requestFocus() }
                     }
-                    runCatching { focusRequester.requestFocus() }
-                }
+                )
             }
     ) {
         // IME 키 캡처 전용 — 1dp 투명 BasicTextField. composition 추적해 한글 지원.
@@ -164,6 +176,20 @@ fun OfficeEditOverlay(
             cursorBrush = SolidColor(Color.Transparent)
         )
 
+        // 선택 영역 — 반투명 파란 박스
+        if (selectionRects.isNotEmpty() && size.width > 0 && size.height > 0) {
+            selectionRects.forEach { rect ->
+                if (rect.size >= 4) {
+                    SelectionRectBox(
+                        xPx = (rect[0] * size.width).toInt(),
+                        yPx = (rect[1] * size.height).toInt(),
+                        widthPx = (rect[2] * size.width).toInt().coerceAtLeast(2),
+                        heightPx = (rect[3] * size.height).toInt().coerceAtLeast(2)
+                    )
+                }
+            }
+        }
+
         // LOK 커서 시각화 — 깜빡이는 얇은 세로 막대
         if (cursorXFrac != null && cursorYFrac != null && cursorHeightFrac != null &&
             size.width > 0 && size.height > 0
@@ -176,6 +202,21 @@ fun OfficeEditOverlay(
             )
         }
     }
+}
+
+@Composable
+private fun SelectionRectBox(xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+    val density = LocalDensity.current
+    val xDp = with(density) { xPx.toDp() }
+    val yDp = with(density) { yPx.toDp() }
+    val wDp = with(density) { widthPx.toDp() }
+    val hDp = with(density) { heightPx.toDp() }
+    Box(
+        modifier = Modifier
+            .offset(x = xDp, y = yDp)
+            .size(width = wDp, height = hDp)
+            .background(Color(0x551976D2))  // 반투명 블루
+    )
 }
 
 @Composable

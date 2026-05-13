@@ -89,6 +89,21 @@ class LokDocumentRenderer @Inject constructor(
     private val _cursor = MutableStateFlow<CursorState?>(null)
     val cursor: StateFlow<CursorState?> = _cursor.asStateFlow()
 
+    /**
+     * 텍스트 선택 영역 — 정규화된 비율 (0..1).
+     * payload "x,y,w,h;x,y,w,h;..." 형식의 사각형 목록을 파싱.
+     */
+    data class SelectionRect(
+        val xFrac: Float,
+        val yFrac: Float,
+        val widthFrac: Float,
+        val heightFrac: Float,
+        val partIndex: Int,
+    )
+
+    private val _selection = MutableStateFlow<List<SelectionRect>>(emptyList())
+    val selection: StateFlow<List<SelectionRect>> = _selection.asStateFlow()
+
     private class Handle(
         override val uri: Uri,
         val document: Document,
@@ -172,12 +187,40 @@ class LokDocumentRenderer @Inject constructor(
                             val vis = payload?.trim() == "true"
                             _cursor.value = _cursor.value?.copy(visible = vis)
                         }
+                        Document.CALLBACK_TEXT_SELECTION -> {
+                            updateSelectionFromPayload(handle, payload)
+                        }
                     }
                 }
             }.onFailure { Timber.w(it, "setMessageCallback 실패 — 편집 후 재렌더 안 될 수 있음") }
 
             handle
         }
+
+    /**
+     * TEXT_SELECTION payload 형식: "x,y,w,h; x,y,w,h; ..." (twips, 세미콜론 구분)
+     * 빈 문자열 또는 "EMPTY" 면 선택 해제.
+     */
+    private fun updateSelectionFromPayload(handle: Handle, payload: String?) {
+        if (payload.isNullOrBlank() || payload.trim() == "EMPTY") {
+            _selection.value = emptyList()
+            return
+        }
+        val dw = handle.lastDocWidthTwips.get()
+        val dh = handle.lastDocHeightTwips.get()
+        if (dw <= 0 || dh <= 0) return
+        val rects = payload.split(';').mapNotNull { rectStr ->
+            val nums = rectStr.split(',').mapNotNull { it.trim().toIntOrNull() }
+            if (nums.size < 4) null else SelectionRect(
+                xFrac = (nums[0].toFloat() / dw).coerceIn(0f, 1f),
+                yFrac = (nums[1].toFloat() / dh).coerceIn(0f, 1f),
+                widthFrac = (nums[2].toFloat() / dw).coerceIn(0f, 1f),
+                heightFrac = (nums[3].toFloat() / dh).coerceIn(0f, 1f),
+                partIndex = handle.lastEditPart.get()
+            )
+        }
+        _selection.value = rects
+    }
 
     /**
      * INVALIDATE_VISIBLE_CURSOR payload 형식: "x, y, width, height" (twips).
@@ -253,6 +296,36 @@ class LokDocumentRenderer @Inject constructor(
                     )
                     true
                 }.onFailure { Timber.w(it, "postMouseTap 실패") }.getOrDefault(false)
+            }
+        }
+    }
+
+    /**
+     * 현재 선택된 텍스트 추출 (Android clipboard 로 복사할 때 사용).
+     * 선택이 없으면 null.
+     */
+    suspend fun getSelectedText(handle: DocumentHandle): String? {
+        val h = handle as Handle
+        return withContext(Dispatchers.IO) {
+            h.mutex.withLock {
+                runCatching {
+                    h.document.getTextSelection("text/plain;charset=utf-8")
+                        ?.takeIf { it.isNotBlank() }
+                }.getOrNull()
+            }
+        }
+    }
+
+    /**
+     * Android clipboard 에서 받은 텍스트를 LOK 에 붙여넣기.
+     */
+    suspend fun pasteText(handle: DocumentHandle, text: String): Boolean {
+        val h = handle as Handle
+        return withContext(Dispatchers.IO) {
+            h.mutex.withLock {
+                runCatching {
+                    h.document.paste("text/plain;charset=utf-8", text)
+                }.onFailure { Timber.w(it, "paste 실패") }.getOrDefault(false)
             }
         }
     }
