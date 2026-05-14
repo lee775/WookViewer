@@ -299,6 +299,8 @@ fun ViewerScreen(
                         vm.pasteOfficeText(text)
                     }
                 },
+                fonts = state.officeFonts,
+                onFontName = vm::setOfficeFontName,
                 onFontSize = vm::setOfficeFontSize,
                 onFontColor = vm::setOfficeFontColor,
                 onBackColor = vm::setOfficeBackColor

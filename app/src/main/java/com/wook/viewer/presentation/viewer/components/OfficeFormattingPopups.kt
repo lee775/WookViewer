@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -53,6 +54,43 @@ private val BACK_COLOR_PALETTE = listOf(
     PaletteEntry("분홍", 0xF8BBD0L),
     PaletteEntry("주황", 0xFFCCBCL),
 )
+
+/**
+ * 글꼴 종류 드롭다운.
+ * [fonts] 는 LOK 에서 조회한 사용 가능 글꼴 목록 (없으면 기본 폴백).
+ * 목록이 길 수 있어 최대 높이 제한 + 스크롤.
+ */
+@Composable
+fun FontNameDropdown(
+    expanded: Boolean,
+    fonts: List<String>,
+    onDismissRequest: () -> Unit,
+    onSelect: (fontName: String) -> Unit
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = Modifier.heightIn(max = 360.dp)
+    ) {
+        if (fonts.isEmpty()) {
+            DropdownMenuItem(
+                text = { Text("글꼴 목록 로딩 중…", fontSize = 13.sp) },
+                onClick = {},
+                enabled = false
+            )
+        } else {
+            fonts.forEach { name ->
+                DropdownMenuItem(
+                    text = { Text(name, fontSize = 14.sp, maxLines = 1) },
+                    onClick = {
+                        onSelect(name)
+                        onDismissRequest()
+                    }
+                )
+            }
+        }
+    }
+}
 
 /**
  * 글꼴 크기 드롭다운.

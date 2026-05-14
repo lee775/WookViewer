@@ -301,6 +301,33 @@ class LokDocumentRenderer @Inject constructor(
     }
 
     /**
+     * 문서에서 사용 가능한 글꼴 목록 조회.
+     * LOK `getCommandValues(".uno:CharFontName")` 의 JSON 을 파싱.
+     * 실패 시 빈 리스트 → UI 가 기본 목록으로 폴백.
+     */
+    suspend fun getAvailableFonts(handle: DocumentHandle): List<String> {
+        val h = handle as Handle
+        return withContext(Dispatchers.IO) {
+            h.mutex.withLock {
+                runCatching {
+                    val json = h.document.getCommandValues(".uno:CharFontName")
+                        ?: return@runCatching emptyList()
+                    val obj = org.json.JSONObject(json)
+                    val values = obj.optJSONObject("commandValues")
+                        ?: return@runCatching emptyList()
+                    val names = ArrayList<String>(values.length())
+                    val keys = values.keys()
+                    while (keys.hasNext()) names.add(keys.next())
+                    names.sorted()
+                }.getOrElse {
+                    Timber.w(it, "getAvailableFonts 실패")
+                    emptyList()
+                }
+            }
+        }
+    }
+
+    /**
      * 현재 선택된 텍스트 추출 (Android clipboard 로 복사할 때 사용).
      * 선택이 없으면 null.
      */

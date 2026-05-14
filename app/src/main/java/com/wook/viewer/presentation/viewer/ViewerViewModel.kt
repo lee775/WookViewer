@@ -83,6 +83,8 @@ data class ViewerUiState(
     val officeCursor: LokDocumentRenderer.CursorState? = null,
     /** LOK 가 알려준 현재 텍스트 선택 영역들. */
     val officeSelection: List<LokDocumentRenderer.SelectionRect> = emptyList(),
+    /** 문서에서 사용 가능한 글꼴 목록 — Office 편집 진입 시 로드. */
+    val officeFonts: List<String> = emptyList(),
     /** 저장 진행 상태. */
     val saving: Boolean = false,
     /** 저장 결과 메시지 (Snackbar 등). */
@@ -566,6 +568,17 @@ class ViewerViewModel @Inject constructor(
     fun enterOfficeEditMode() {
         if (!canEditOffice()) return
         _state.update { it.copy(officeEditMode = true) }
+        // 사용 가능 글꼴 목록 로드 (한 번만)
+        if (_state.value.officeFonts.isEmpty()) {
+            val r = renderer as? LokDocumentRenderer ?: return
+            val h = handle ?: return
+            viewModelScope.launch {
+                val fonts = r.getAvailableFonts(h)
+                _state.update {
+                    it.copy(officeFonts = fonts.ifEmpty { DEFAULT_OFFICE_FONTS })
+                }
+            }
+        }
     }
 
     fun exitOfficeEditMode() {
@@ -621,6 +634,14 @@ class ViewerViewModel @Inject constructor(
     fun setOfficeBackColor(rgb: Long) {
         val args = """{"BackColor.Color":{"type":"long","value":"$rgb"}}"""
         postOfficeUnoCommand(".uno:BackColor", args)
+    }
+
+    /** 글꼴 종류 변경. */
+    fun setOfficeFontName(fontName: String) {
+        // JSON 값에 들어가는 글꼴명 — 따옴표/역슬래시 이스케이프
+        val escaped = fontName.replace("\\", "\\\\").replace("\"", "\\\"")
+        val args = """{"CharFontName.FontName":{"type":"string","value":"$escaped"}}"""
+        postOfficeUnoCommand(".uno:CharFontName", args)
     }
 
     /**
@@ -798,5 +819,12 @@ class ViewerViewModel @Inject constructor(
 
     private companion object {
         const val MAX_MATCHES = 500
+
+        /** LOK 글꼴 조회 실패 시 폴백 — LibreOffice 번들 글꼴 + 흔한 한글 글꼴명. */
+        val DEFAULT_OFFICE_FONTS = listOf(
+            "Liberation Sans", "Liberation Serif", "Liberation Mono",
+            "Carlito", "Caladea", "DejaVu Sans", "DejaVu Serif",
+            "굴림", "돋움", "바탕", "궁서", "맑은 고딕", "함초롬바탕", "함초롬돋움"
+        )
     }
 }

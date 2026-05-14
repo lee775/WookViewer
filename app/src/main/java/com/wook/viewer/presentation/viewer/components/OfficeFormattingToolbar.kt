@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.FormatAlignLeft
 import androidx.compose.material.icons.filled.FormatAlignRight
+import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatColorFill
 import androidx.compose.material.icons.filled.FormatColorText
@@ -54,12 +55,15 @@ fun OfficeFormattingToolbar(
     onUnoCommand: (String) -> Unit,
     onCopy: () -> Unit,
     onPaste: () -> Unit,
+    fonts: List<String>,
+    onFontName: (String) -> Unit,
     onFontSize: (Float) -> Unit,
     onFontColor: (Long) -> Unit,
     onBackColor: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scroll = rememberScrollState()
+    var fontMenuExpanded by remember { mutableStateOf(false) }
     var sizeMenuExpanded by remember { mutableStateOf(false) }
     var fontColorMenuExpanded by remember { mutableStateOf(false) }
     var backColorMenuExpanded by remember { mutableStateOf(false) }
@@ -79,6 +83,16 @@ fun OfficeFormattingToolbar(
         ToolButton(Icons.Filled.ContentCopy, "복사") { onCopy() }
         ToolButton(Icons.Filled.ContentPaste, "붙여넣기") { onPaste() }
         Spacer8()
+        // 글꼴 종류 드롭다운
+        Box {
+            ToolButton(Icons.Filled.FontDownload, "글꼴 종류") { fontMenuExpanded = true }
+            FontNameDropdown(
+                expanded = fontMenuExpanded,
+                fonts = fonts,
+                onDismissRequest = { fontMenuExpanded = false },
+                onSelect = onFontName
+            )
+        }
         // 글꼴 크기 드롭다운 — 버튼 자체가 anchor
         Box {
             ToolButton(Icons.Filled.FormatSize, "글꼴 크기") { sizeMenuExpanded = true }
