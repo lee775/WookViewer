@@ -1,10 +1,13 @@
 package com.wook.viewer.presentation.viewer.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -17,9 +20,12 @@ import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.FormatAlignLeft
 import androidx.compose.material.icons.filled.FormatAlignRight
 import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.material.icons.filled.FormatColorFill
+import androidx.compose.material.icons.filled.FormatColorText
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.FormatListNumbered
+import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Undo
@@ -27,6 +33,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,9 +54,16 @@ fun OfficeFormattingToolbar(
     onUnoCommand: (String) -> Unit,
     onCopy: () -> Unit,
     onPaste: () -> Unit,
+    onFontSize: (Float) -> Unit,
+    onFontColor: (Long) -> Unit,
+    onBackColor: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scroll = rememberScrollState()
+    var sizeMenuExpanded by remember { mutableStateOf(false) }
+    var fontColorMenuExpanded by remember { mutableStateOf(false) }
+    var backColorMenuExpanded by remember { mutableStateOf(false) }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -61,6 +78,36 @@ fun OfficeFormattingToolbar(
         Spacer8()
         ToolButton(Icons.Filled.ContentCopy, "복사") { onCopy() }
         ToolButton(Icons.Filled.ContentPaste, "붙여넣기") { onPaste() }
+        Spacer8()
+        // 글꼴 크기 드롭다운 — 버튼 자체가 anchor
+        Box {
+            ToolButton(Icons.Filled.FormatSize, "글꼴 크기") { sizeMenuExpanded = true }
+            FontSizeDropdown(
+                expanded = sizeMenuExpanded,
+                onDismissRequest = { sizeMenuExpanded = false },
+                onSelect = onFontSize
+            )
+        }
+        // 글자색
+        Box {
+            ToolButton(Icons.Filled.FormatColorText, "글자색") { fontColorMenuExpanded = true }
+            ColorPaletteDropdown(
+                expanded = fontColorMenuExpanded,
+                mode = "font",
+                onDismissRequest = { fontColorMenuExpanded = false },
+                onSelect = onFontColor
+            )
+        }
+        // 배경색(형광펜)
+        Box {
+            ToolButton(Icons.Filled.FormatColorFill, "형광펜") { backColorMenuExpanded = true }
+            ColorPaletteDropdown(
+                expanded = backColorMenuExpanded,
+                mode = "back",
+                onDismissRequest = { backColorMenuExpanded = false },
+                onSelect = onBackColor
+            )
+        }
         Spacer8()
         ToolButton(Icons.Filled.FormatBold, "굵게") { onUnoCommand(".uno:Bold") }
         ToolButton(Icons.Filled.FormatItalic, "기울임") { onUnoCommand(".uno:Italic") }

@@ -599,10 +599,28 @@ class ViewerViewModel @Inject constructor(
     }
 
     /** `.uno:Bold`, `.uno:Italic`, `.uno:Underline` 등 서식 명령. */
-    fun postOfficeUnoCommand(command: String) {
+    fun postOfficeUnoCommand(command: String, arguments: String? = null) {
         val r = renderer as? LokDocumentRenderer ?: return
         val h = handle ?: return
-        viewModelScope.launch { r.postUnoCommand(h, command) }
+        viewModelScope.launch { r.postUnoCommand(h, command, arguments) }
+    }
+
+    /** 글꼴 크기 변경 — 단위는 pt. */
+    fun setOfficeFontSize(sizePt: Float) {
+        val args = """{"FontHeight.Height":{"type":"float","value":"$sizePt"}}"""
+        postOfficeUnoCommand(".uno:FontHeight", args)
+    }
+
+    /** 글자 색상 변경 — rgb 0xRRGGBB (long). 0xFFFFFFFF = -1 = 자동. */
+    fun setOfficeFontColor(rgb: Long) {
+        val args = """{"FontColor.Color":{"type":"long","value":"$rgb"}}"""
+        postOfficeUnoCommand(".uno:FontColor", args)
+    }
+
+    /** 글자 배경(형광펜) 색상 — rgb 0xRRGGBB (long). 0xFFFFFFFF = -1 = 없음. */
+    fun setOfficeBackColor(rgb: Long) {
+        val args = """{"BackColor.Color":{"type":"long","value":"$rgb"}}"""
+        postOfficeUnoCommand(".uno:BackColor", args)
     }
 
     /**

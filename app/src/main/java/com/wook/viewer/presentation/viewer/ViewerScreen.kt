@@ -277,7 +277,7 @@ fun ViewerScreen(
         // Office 편집 모드일 때 EditTopBar 바로 아래 서식 도구바
         if (state.officeEditMode) {
             OfficeFormattingToolbar(
-                onUnoCommand = vm::postOfficeUnoCommand,
+                onUnoCommand = { cmd -> vm.postOfficeUnoCommand(cmd) },
                 onCopy = {
                     vm.copyOfficeSelection { text ->
                         if (text.isNullOrEmpty()) {
@@ -298,7 +298,10 @@ fun ViewerScreen(
                     } else {
                         vm.pasteOfficeText(text)
                     }
-                }
+                },
+                onFontSize = vm::setOfficeFontSize,
+                onFontColor = vm::setOfficeFontColor,
+                onBackColor = vm::setOfficeBackColor
             )
         }
 

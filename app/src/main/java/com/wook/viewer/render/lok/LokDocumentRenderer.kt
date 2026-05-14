@@ -332,15 +332,23 @@ class LokDocumentRenderer @Inject constructor(
 
     /**
      * `.uno:Bold` 같은 LOK UNO 명령 실행. 서식 도구바에서 사용.
+     *
+     * @param arguments JSON 형식 인자 (예: `{"FontHeight.Height":{"type":"float","value":"14"}}`).
+     *   null 이면 단순 토글 명령 (Bold/Italic 등).
      */
-    suspend fun postUnoCommand(handle: DocumentHandle, command: String): Boolean {
+    suspend fun postUnoCommand(
+        handle: DocumentHandle,
+        command: String,
+        arguments: String? = null
+    ): Boolean {
         val h = handle as Handle
         return withContext(Dispatchers.IO) {
             h.mutex.withLock {
                 runCatching {
-                    h.document.postUnoCommand(command, null, false)
+                    h.document.postUnoCommand(command, arguments, false)
                     true
-                }.onFailure { Timber.w(it, "postUnoCommand 실패: $command") }.getOrDefault(false)
+                }.onFailure { Timber.w(it, "postUnoCommand 실패: $command args=$arguments") }
+                    .getOrDefault(false)
             }
         }
     }
