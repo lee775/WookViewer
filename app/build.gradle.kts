@@ -14,11 +14,33 @@ android {
         applicationId = "com.wook.viewer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 52
-        versionName = "0.9.10"
+        versionCode = 100
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    // 릴리즈 서명 — 환경 변수에서 keystore 경로/암호 읽기.
+    // CI: build-release 워크플로가 secret 에서 디코드한 jks 경로/암호를 env 로 전달.
+    // 로컬: keystore/wookviewer-release.jks 파일을 두고 환경 변수 RELEASE_KEYSTORE_PASSWORD 등 설정.
+    val releaseKeystorePath: String? = System.getenv("RELEASE_KEYSTORE_PATH")
+    val releaseKeystorePassword: String? = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+    val releaseKeyAlias: String? = System.getenv("RELEASE_KEY_ALIAS") ?: "wookviewer"
+    val releaseKeyPassword: String? = System.getenv("RELEASE_KEY_PASSWORD") ?: releaseKeystorePassword
+    val keystoreFile = releaseKeystorePath?.let { file(it) }
+    val hasReleaseSigning = keystoreFile?.exists() == true &&
+        !releaseKeystorePassword.isNullOrBlank()
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -32,6 +54,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

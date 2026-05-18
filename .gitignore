@@ -11,6 +11,8 @@ local.properties
 *.apk
 *.aab
 *.keystore
+*.jks
+/keystore/
 
 # Build artifacts (downloaded from GitHub Actions)
 /apk-output/
