@@ -48,8 +48,11 @@ android {
             isMinifyEnabled = false
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // POI 5.x + xmlbeans 가 광범위한 디지털 서명/XML 스키마 클래스를 참조 →
+            // R8 strict mode (AGP 8+) 가 미사용 누락 클래스 모두 error. 실용적으로 minify 비활성.
+            // (서명·압축은 별도 — APK 사이즈 영향만 있음)
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

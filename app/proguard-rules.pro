@@ -44,17 +44,31 @@
 -dontwarn kr.dogfoot.**
 
 # Apache POI — 리플렉션 + schema 클래스 다수
+# R8 의 "Missing classes" 에러 방지: POI 가 디지털 서명/메타데이터 스키마를 참조하지만
+# 우리는 그 기능 안 씀 → 누락 클래스 모두 무시.
 -keep class org.apache.poi.** { *; }
 -keep class org.openxmlformats.** { *; }
 -keep class schemaorg_apache_xmlbeans.** { *; }
 -keep class com.microsoft.schemas.** { *; }
 -keep class org.etsi.uri.** { *; }
 -keep class org.w3.x2000.** { *; }
+-keep class org.w3.x2003.** { *; }
 -dontwarn org.apache.poi.**
 -dontwarn org.apache.xmlbeans.**
 -dontwarn org.openxmlformats.**
 -dontwarn schemaorg_apache_xmlbeans.**
 -dontwarn com.microsoft.schemas.**
+-dontwarn org.etsi.uri.**
+-dontwarn org.w3.**
+# POI 디지털 서명·외부 의존 (사용 안 함)
+-dontwarn org.apache.xml.security.**
+-dontwarn de.rototor.pdfbox.graphics2d.**
+-dontwarn com.zaxxer.sparsebits.**
+-dontwarn com.graphbuilder.**
+-dontwarn org.osgi.framework.**
+
+# R8 missing class 에러 전반적으로 무시 (POI 가 끌어오는 광범위한 미사용 의존)
+-ignorewarnings
 
 # xmlbeans
 -keep class org.apache.xmlbeans.** { *; }
