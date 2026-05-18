@@ -14,8 +14,8 @@ android {
         applicationId = "com.wook.viewer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 50
-        versionName = "0.9.8"
+        versionCode = 51
+        versionName = "0.9.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }

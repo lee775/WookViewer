@@ -104,12 +104,20 @@ class LokDocumentRenderer @Inject constructor(
     private val _selection = MutableStateFlow<List<SelectionRect>>(emptyList())
     val selection: StateFlow<List<SelectionRect>> = _selection.asStateFlow()
 
+    /** 한 페이지의 twips 좌표·크기. getPartPageRectangles 결과 파싱용. */
+    private data class IntRect(val x: Int, val y: Int, val width: Int, val height: Int)
+
     private class Handle(
         override val uri: Uri,
         val document: Document,
         val tempFile: File,
         val docType: Int,
         val partCount: Int,
+        /**
+         * DOCX 처럼 single-part 인데 페이지가 여러 개인 경우의 페이지 rect 목록.
+         * PPTX/XLSX (multi-part) 면 null — partCount 가 페이지 수와 동일.
+         */
+        val pageRects: List<IntRect>?,
         val mutex: Mutex = Mutex(),
         val bitmapCache: BitmapLruCache = BitmapLruCache(BITMAP_CACHE_SIZE_BYTES),
         /** paintTile/postMouseTap 에서 setPart 후 갱신 — callback 좌표 정규화에 사용. */
@@ -171,9 +179,20 @@ class LokDocumentRenderer @Inject constructor(
 
             val docType = runCatching { document.documentType }.getOrDefault(Document.DOCTYPE_OTHER)
             val partCount = runCatching { document.parts.coerceAtLeast(1) }.getOrDefault(1)
-            Timber.i("LOK 문서 열기: type=$docType, parts=$partCount, file=${tempFile.name}")
 
-            val handle = Handle(uri, document, tempFile, docType, partCount)
+            // single-part Writer 문서면 페이지 분할 → getPartPageRectangles
+            val pageRects: List<IntRect>? = if (partCount == 1 && docType == Document.DOCTYPE_TEXT) {
+                runCatching {
+                    val raw = document.partPageRectangles
+                    parsePageRects(raw).takeIf { it.size > 1 }
+                }.onFailure { Timber.w(it, "getPartPageRectangles 실패") }.getOrNull()
+            } else null
+
+            Timber.i(
+                "LOK 문서 열기: type=$docType, parts=$partCount, pages=${pageRects?.size ?: partCount}, file=${tempFile.name}"
+            )
+
+            val handle = Handle(uri, document, tempFile, docType, partCount, pageRects)
 
             // message callback — tile invalidation + cursor 위치/표시 추적
             runCatching {
@@ -197,55 +216,121 @@ class LokDocumentRenderer @Inject constructor(
             handle
         }
 
+    /** "x,y,w,h; x,y,w,h; ..." → IntRect 목록. */
+    private fun parsePageRects(payload: String?): List<IntRect> {
+        if (payload.isNullOrBlank()) return emptyList()
+        return payload.split(';').mapNotNull { rectStr ->
+            val nums = rectStr.split(',').mapNotNull { it.trim().toIntOrNull() }
+            if (nums.size >= 4 && nums[2] > 0 && nums[3] > 0) {
+                IntRect(nums[0], nums[1], nums[2], nums[3])
+            } else null
+        }
+    }
+
+    /**
+     * 절대 twips 좌표가 어느 페이지에 속하는지 찾기.
+     * 정확히 포함되는 페이지가 없으면 y 기준 가장 가까운 페이지.
+     */
+    private fun findPageIndex(handle: Handle, xTwips: Int, yTwips: Int): Int {
+        val rects = handle.pageRects ?: return handle.lastEditPart.get()
+        rects.forEachIndexed { i, r ->
+            if (yTwips >= r.y && yTwips < r.y + r.height &&
+                xTwips >= r.x && xTwips < r.x + r.width
+            ) return i
+        }
+        var bestIdx = 0
+        var bestDist = Int.MAX_VALUE
+        rects.forEachIndexed { i, r ->
+            val centerY = r.y + r.height / 2
+            val dist = kotlin.math.abs(centerY - yTwips)
+            if (dist < bestDist) { bestDist = dist; bestIdx = i }
+        }
+        return bestIdx
+    }
+
     /**
      * TEXT_SELECTION payload 형식: "x,y,w,h; x,y,w,h; ..." (twips, 세미콜론 구분)
      * 빈 문자열 또는 "EMPTY" 면 선택 해제.
+     * 페이지 분할된 DOCX 면 각 rect 의 partIndex 를 그 rect 가 속한 페이지로 설정.
      */
     private fun updateSelectionFromPayload(handle: Handle, payload: String?) {
         if (payload.isNullOrBlank() || payload.trim() == "EMPTY") {
             _selection.value = emptyList()
             return
         }
-        val dw = handle.lastDocWidthTwips.get()
-        val dh = handle.lastDocHeightTwips.get()
-        if (dw <= 0 || dh <= 0) return
-        val rects = payload.split(';').mapNotNull { rectStr ->
-            val nums = rectStr.split(',').mapNotNull { it.trim().toIntOrNull() }
-            if (nums.size < 4) null else SelectionRect(
-                xFrac = (nums[0].toFloat() / dw).coerceIn(0f, 1f),
-                yFrac = (nums[1].toFloat() / dh).coerceIn(0f, 1f),
-                widthFrac = (nums[2].toFloat() / dw).coerceIn(0f, 1f),
-                heightFrac = (nums[3].toFloat() / dh).coerceIn(0f, 1f),
-                partIndex = handle.lastEditPart.get()
-            )
+        if (handle.pageRects != null) {
+            // 페이지 분할 — 각 selection rect 가 어느 페이지에 속하는지 찾아 정규화
+            val rects = payload.split(';').mapNotNull { rectStr ->
+                val nums = rectStr.split(',').mapNotNull { it.trim().toIntOrNull() }
+                if (nums.size < 4) return@mapNotNull null
+                val absX = nums[0]; val absY = nums[1]
+                val w = nums[2]; val h = nums[3]
+                val pageIdx = findPageIndex(handle, absX, absY)
+                val pr = handle.pageRects[pageIdx]
+                if (pr.width <= 0 || pr.height <= 0) return@mapNotNull null
+                SelectionRect(
+                    xFrac = ((absX - pr.x).toFloat() / pr.width).coerceIn(0f, 1f),
+                    yFrac = ((absY - pr.y).toFloat() / pr.height).coerceIn(0f, 1f),
+                    widthFrac = (w.toFloat() / pr.width).coerceIn(0f, 1f),
+                    heightFrac = (h.toFloat() / pr.height).coerceIn(0f, 1f),
+                    partIndex = pageIdx
+                )
+            }
+            _selection.value = rects
+        } else {
+            // 단일 part — 기존 정규화
+            val dw = handle.lastDocWidthTwips.get()
+            val dh = handle.lastDocHeightTwips.get()
+            if (dw <= 0 || dh <= 0) return
+            val rects = payload.split(';').mapNotNull { rectStr ->
+                val nums = rectStr.split(',').mapNotNull { it.trim().toIntOrNull() }
+                if (nums.size < 4) null else SelectionRect(
+                    xFrac = (nums[0].toFloat() / dw).coerceIn(0f, 1f),
+                    yFrac = (nums[1].toFloat() / dh).coerceIn(0f, 1f),
+                    widthFrac = (nums[2].toFloat() / dw).coerceIn(0f, 1f),
+                    heightFrac = (nums[3].toFloat() / dh).coerceIn(0f, 1f),
+                    partIndex = handle.lastEditPart.get()
+                )
+            }
+            _selection.value = rects
         }
-        _selection.value = rects
     }
 
     /**
      * INVALIDATE_VISIBLE_CURSOR payload 형식: "x, y, width, height" (twips).
-     * paintTile 에서 캐시한 doc 크기를 써서 정규화된 비율로 변환.
+     * 페이지 분할된 DOCX 면 커서가 속한 페이지를 찾아 그 페이지 기준으로 정규화.
      */
     private fun updateCursorFromPayload(handle: Handle, payload: String?) {
         if (payload.isNullOrBlank()) return
         val nums = payload.split(',').mapNotNull { it.trim().toIntOrNull() }
         if (nums.size < 4) return
-        val dw = handle.lastDocWidthTwips.get()
-        val dh = handle.lastDocHeightTwips.get()
-        if (dw <= 0 || dh <= 0) return  // paintTile 한 번도 안 됐으면 변환 불가
-        val xF = nums[0].toFloat() / dw
-        val yF = nums[1].toFloat() / dh
-        // 가로 폭이 0 인 경우(보통 텍스트 커서)는 1px 정도로 보이게 최소값
-        val wF = (nums[2].coerceAtLeast(20)).toFloat() / dw
-        val hF = nums[3].toFloat() / dh
-        _cursor.value = CursorState(
-            xFrac = xF.coerceIn(0f, 1f),
-            yFrac = yF.coerceIn(0f, 1f),
-            widthFrac = wF.coerceAtLeast(0.001f),
-            heightFrac = hF.coerceAtLeast(0.002f),
-            partIndex = handle.lastEditPart.get(),
-            visible = true
-        )
+        val cx = nums[0]; val cy = nums[1]
+        val cw = nums[2]; val ch = nums[3]
+        if (handle.pageRects != null) {
+            val pageIdx = findPageIndex(handle, cx, cy)
+            val pr = handle.pageRects[pageIdx]
+            if (pr.width <= 0 || pr.height <= 0) return
+            _cursor.value = CursorState(
+                xFrac = ((cx - pr.x).toFloat() / pr.width).coerceIn(0f, 1f),
+                yFrac = ((cy - pr.y).toFloat() / pr.height).coerceIn(0f, 1f),
+                widthFrac = (cw.coerceAtLeast(20).toFloat() / pr.width).coerceAtLeast(0.001f),
+                heightFrac = (ch.toFloat() / pr.height).coerceAtLeast(0.002f),
+                partIndex = pageIdx,
+                visible = true
+            )
+        } else {
+            val dw = handle.lastDocWidthTwips.get()
+            val dh = handle.lastDocHeightTwips.get()
+            if (dw <= 0 || dh <= 0) return
+            _cursor.value = CursorState(
+                xFrac = (cx.toFloat() / dw).coerceIn(0f, 1f),
+                yFrac = (cy.toFloat() / dh).coerceIn(0f, 1f),
+                widthFrac = (cw.coerceAtLeast(20).toFloat() / dw).coerceAtLeast(0.001f),
+                heightFrac = (ch.toFloat() / dh).coerceAtLeast(0.002f),
+                partIndex = handle.lastEditPart.get(),
+                visible = true
+            )
+        }
     }
 
     /** 모든 캐시된 비트맵 무효화. tile invalidation 시 VM 이 호출. */
@@ -273,17 +358,28 @@ class LokDocumentRenderer @Inject constructor(
         return withContext(Dispatchers.IO) {
             h.mutex.withLock {
                 runCatching {
-                    if (h.partCount > 1) {
-                        h.document.setPart(pageIndex.coerceIn(0, h.partCount - 1))
+                    val xTwips: Int
+                    val yTwips: Int
+                    if (h.pageRects != null) {
+                        // 페이지 분할 — 절대 좌표 = 페이지 offset + 페이지 내 비율
+                        val rect = h.pageRects[pageIndex.coerceIn(0, h.pageRects.size - 1)]
+                        xTwips = rect.x + (xPx.toLong() * rect.width / widthPx).toInt()
+                        yTwips = rect.y + (yPx.toLong() * rect.height / heightPx).toInt()
+                        h.lastEditPart.set(pageIndex.coerceIn(0, h.pageRects.size - 1))
+                        // 전체 doc 크기는 paintTile 들이 갱신하므로 여기서 추가 갱신 안 함
+                    } else {
+                        if (h.partCount > 1) {
+                            h.document.setPart(pageIndex.coerceIn(0, h.partCount - 1))
+                        }
+                        h.lastEditPart.set(pageIndex.coerceIn(0, (h.partCount - 1).coerceAtLeast(0)))
+                        val docW = h.document.documentWidth.toInt()
+                        val docH = h.document.documentHeight.toInt()
+                        h.lastDocWidthTwips.set(docW.toLong())
+                        h.lastDocHeightTwips.set(docH.toLong())
+                        if (docW <= 0 || docH <= 0) return@runCatching false
+                        xTwips = (xPx.toLong() * docW / widthPx).toInt()
+                        yTwips = (yPx.toLong() * docH / heightPx).toInt()
                     }
-                    h.lastEditPart.set(pageIndex.coerceIn(0, (h.partCount - 1).coerceAtLeast(0)))
-                    val docW = h.document.documentWidth.toInt()
-                    val docH = h.document.documentHeight.toInt()
-                    h.lastDocWidthTwips.set(docW.toLong())
-                    h.lastDocHeightTwips.set(docH.toLong())
-                    if (docW <= 0 || docH <= 0) return@runCatching false
-                    val xTwips = (xPx.toLong() * docW / widthPx).toInt()
-                    val yTwips = (yPx.toLong() * docH / heightPx).toInt()
                     h.document.postMouseEvent(
                         Document.MOUSE_EVENT_BUTTON_DOWN,
                         xTwips, yTwips, 1,
@@ -416,11 +512,19 @@ class LokDocumentRenderer @Inject constructor(
 
     override suspend fun pageCount(handle: DocumentHandle): Int {
         val h = handle as Handle
-        return h.partCount  // open 시 한 번 측정해 두고 재사용
+        return h.pageRects?.size ?: h.partCount
     }
 
     override suspend fun pageSize(handle: DocumentHandle, index: Int): PageSize {
         val h = handle as Handle
+        // 페이지 분할된 DOCX: rect 에서 직접
+        h.pageRects?.let { rects ->
+            val rect = rects[index.coerceIn(0, rects.size - 1)]
+            return PageSize(
+                widthPt = rect.width.toFloat() / TWIPS_PER_POINT,
+                heightPt = rect.height.toFloat() / TWIPS_PER_POINT
+            )
+        }
         return h.mutex.withLock {
             runCatching {
                 if (h.partCount > 1) h.document.setPart(index.coerceIn(0, h.partCount - 1))
@@ -465,23 +569,36 @@ class LokDocumentRenderer @Inject constructor(
                 }
             }
 
-            if (h.partCount > 1) {
-                runCatching { h.document.setPart(index.coerceIn(0, h.partCount - 1)) }
-                    .onFailure { Timber.w(it, "setPart($index) 실패") }
+            // 타일 위치/크기 결정 — 페이지 분할 모드면 그 페이지의 rect, 아니면 전체 문서
+            val tileX: Int
+            val tileY: Int
+            val tileW: Int
+            val tileH: Int
+            if (h.pageRects != null) {
+                val rect = h.pageRects[index.coerceIn(0, h.pageRects.size - 1)]
+                tileX = rect.x; tileY = rect.y
+                tileW = rect.width; tileH = rect.height
+                // 페이지 분할 — 전체 doc 크기는 cursor/selection 전역 정규화에 안 씀
+                h.lastDocWidthTwips.set(tileW.toLong())
+                h.lastDocHeightTwips.set(tileH.toLong())
+            } else {
+                if (h.partCount > 1) {
+                    runCatching { h.document.setPart(index.coerceIn(0, h.partCount - 1)) }
+                        .onFailure { Timber.w(it, "setPart($index) 실패") }
+                }
+                val dw = runCatching { h.document.documentWidth }.getOrDefault(0L).toInt()
+                val dh = runCatching { h.document.documentHeight }.getOrDefault(0L).toInt()
+                if (dw <= 0 || dh <= 0) {
+                    throw DocumentError.Corrupted(
+                        IllegalStateException("LOK 문서 크기 0: w=$dw h=$dh")
+                    )
+                }
+                tileX = 0; tileY = 0; tileW = dw; tileH = dh
+                h.lastDocWidthTwips.set(dw.toLong())
+                h.lastDocHeightTwips.set(dh.toLong())
             }
 
-            val docWidthTwips = runCatching { h.document.documentWidth }.getOrDefault(0L).toInt()
-            val docHeightTwips = runCatching { h.document.documentHeight }.getOrDefault(0L).toInt()
-            // 커서 콜백이 좌표 정규화에 사용 — paintTile 마다 갱신
-            h.lastDocWidthTwips.set(docWidthTwips.toLong())
-            h.lastDocHeightTwips.set(docHeightTwips.toLong())
-            if (docWidthTwips <= 0 || docHeightTwips <= 0) {
-                throw DocumentError.Corrupted(
-                    IllegalStateException("LOK 문서 크기 0: w=$docWidthTwips h=$docHeightTwips")
-                )
-            }
-
-            val heightPx = (widthPx.toLong() * docHeightTwips / docWidthTwips)
+            val heightPx = (widthPx.toLong() * tileH / tileW)
                 .toInt().coerceAtLeast(1).coerceAtMost(MAX_HEIGHT_PX)
 
             // 비트맵을 위해 DirectBuffer 할당
@@ -494,16 +611,17 @@ class LokDocumentRenderer @Inject constructor(
             }
 
             try {
-                // LOK paintTile: ARGB DirectBuffer 에 그림. 전체 페이지를 한 타일로 요청.
+                // LOK paintTile: ARGB DirectBuffer 에 그림.
+                // 페이지 분할 모드: 해당 페이지 rect 만 슬라이스, 단일 모드: 전체 문서.
                 runCatching {
                     h.document.paintTile(
                         buffer,
                         widthPx,
                         heightPx,
-                        0,
-                        0,
-                        docWidthTwips,
-                        docHeightTwips
+                        tileX,
+                        tileY,
+                        tileW,
+                        tileH
                     )
                 }.getOrElse {
                     Timber.e(it, "paintTile($index) 실패")
