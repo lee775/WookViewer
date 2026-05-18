@@ -124,6 +124,8 @@ class LokDocumentRenderer @Inject constructor(
         val lastDocWidthTwips: AtomicLong = AtomicLong(0),
         val lastDocHeightTwips: AtomicLong = AtomicLong(0),
         val lastEditPart: AtomicInteger = AtomicInteger(0),
+        /** 페이지 분할 DOCX 의 페이지별 텍스트 — getPageText 첫 호출 시 채워서 재사용. */
+        @Volatile var cachedPageTexts: List<String>? = null,
     ) : DocumentHandle
 
     private data class CacheKey(val partIndex: Int, val widthPx: Int)
@@ -337,7 +339,11 @@ class LokDocumentRenderer @Inject constructor(
     suspend fun invalidateAll(handle: DocumentHandle) {
         val h = handle as Handle
         withContext(Dispatchers.IO) {
-            h.mutex.withLock { h.bitmapCache.evictAll() }
+            h.mutex.withLock {
+                h.bitmapCache.evictAll()
+                // 편집으로 텍스트 변경 → 페이지별 텍스트 캐시도 무효화
+                h.cachedPageTexts = null
+            }
         }
     }
 
@@ -598,11 +604,20 @@ class LokDocumentRenderer @Inject constructor(
                 h.lastDocHeightTwips.set(dh.toLong())
             }
 
-            val heightPx = (widthPx.toLong() * tileH / tileW)
-                .toInt().coerceAtLeast(1).coerceAtMost(MAX_HEIGHT_PX)
+            // 비율 유지하며 MAX_HEIGHT_PX 이내로 맞춤.
+            // raw heightPx 가 8192 초과면 widthPx 를 비례 축소 → 잘림 대신 해상도 낮춤.
+            val rawHeightPx = (widthPx.toLong() * tileH / tileW).toInt().coerceAtLeast(1)
+            val (renderWidthPx, heightPx) = if (rawHeightPx > MAX_HEIGHT_PX) {
+                val scale = MAX_HEIGHT_PX.toFloat() / rawHeightPx
+                val newWidth = (widthPx * scale).toInt().coerceAtLeast(MIN_WIDTH_PX)
+                Timber.d("페이지 $index 크기 초과 — widthPx $widthPx→$newWidth, heightPx $rawHeightPx→${MAX_HEIGHT_PX}")
+                Pair(newWidth, MAX_HEIGHT_PX)
+            } else {
+                Pair(widthPx, rawHeightPx)
+            }
 
             // 비트맵을 위해 DirectBuffer 할당
-            val bufferSize = widthPx * heightPx * 4  // ARGB 8888
+            val bufferSize = renderWidthPx * heightPx * 4  // ARGB 8888
             val buffer: ByteBuffer = try {
                 DirectBufferAllocator.allocate(bufferSize)
             } catch (oom: OutOfMemoryError) {
@@ -616,7 +631,7 @@ class LokDocumentRenderer @Inject constructor(
                 runCatching {
                     h.document.paintTile(
                         buffer,
-                        widthPx,
+                        renderWidthPx,
                         heightPx,
                         tileX,
                         tileY,
@@ -628,7 +643,7 @@ class LokDocumentRenderer @Inject constructor(
                     throw DocumentError.Corrupted(it)
                 }
 
-                val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+                val bitmap = Bitmap.createBitmap(renderWidthPx, heightPx, Bitmap.Config.ARGB_8888)
                 buffer.rewind()
                 bitmap.copyPixelsFromBuffer(buffer)
 
@@ -637,7 +652,7 @@ class LokDocumentRenderer @Inject constructor(
 
                 RenderedPage(
                     index = index,
-                    widthPx = widthPx,
+                    widthPx = renderWidthPx,
                     heightPx = heightPx,
                     bitmap = bitmap
                 )
@@ -650,14 +665,24 @@ class LokDocumentRenderer @Inject constructor(
     override suspend fun getPageText(handle: DocumentHandle, index: Int): String? {
         val h = handle as Handle
         return withContext(Dispatchers.IO) {
+            // 페이지 분할된 DOCX: 전체 텍스트를 한 번만 가져와 페이지 수에 비례해 분할
+            if (h.pageRects != null) {
+                val pages = h.pageRects.size
+                val cachedSplit = h.cachedPageTexts
+                if (cachedSplit != null) {
+                    return@withContext cachedSplit.getOrNull(index.coerceIn(0, pages - 1))
+                }
+                val full = h.mutex.withLock { extractFullText(h) } ?: return@withContext null
+                val split = splitTextProportionally(full, pages)
+                h.cachedPageTexts = split
+                return@withContext split.getOrNull(index.coerceIn(0, pages - 1))
+            }
+            // multi-part: setPart 후 SelectAll
             h.mutex.withLock {
                 runCatching {
                     if (h.partCount > 1) h.document.setPart(index.coerceIn(0, h.partCount - 1))
-                    // 1. 전체 선택
                     h.document.postUnoCommand(".uno:SelectAll", null, false)
-                    // 2. 선택 텍스트 추출 — text/plain;charset=utf-8
                     val text = h.document.getTextSelection("text/plain;charset=utf-8")
-                    // 3. 선택 해제 (다음 페이지 위해)
                     h.document.resetSelection()
                     text?.takeIf { it.isNotBlank() }
                 }.getOrElse {
@@ -666,6 +691,49 @@ class LokDocumentRenderer @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun extractFullText(h: Handle): String? = runCatching {
+        h.document.postUnoCommand(".uno:SelectAll", null, false)
+        val t = h.document.getTextSelection("text/plain;charset=utf-8")
+        h.document.resetSelection()
+        t?.takeIf { it.isNotBlank() }
+    }.onFailure { Timber.w(it, "extractFullText 실패") }.getOrNull()
+
+    /**
+     * 전체 텍스트를 [pages] 개로 균등 분할. 각 경계는 가장 가까운 newline 으로 스냅 (±100 자 내).
+     * 페이지 별 글자 수가 정확하진 않지만 검색 매치를 비슷한 페이지로 매핑하는 데 충분.
+     */
+    private fun splitTextProportionally(fullText: String, pages: Int): List<String> {
+        if (pages <= 1 || fullText.isEmpty()) return listOf(fullText)
+        val per = fullText.length / pages
+        val result = ArrayList<String>(pages)
+        var offset = 0
+        for (i in 0 until pages - 1) {
+            val target = (i + 1) * per
+            val snapped = snapToNewline(fullText, target).coerceIn(offset, fullText.length)
+            result.add(fullText.substring(offset, snapped))
+            offset = snapped
+        }
+        result.add(fullText.substring(offset))
+        return result
+    }
+
+    private fun snapToNewline(text: String, position: Int): Int {
+        if (position >= text.length) return text.length
+        if (position <= 0) return 0
+        val radius = 100
+        val start = (position - radius).coerceAtLeast(0)
+        val end = (position + radius).coerceAtMost(text.length)
+        var bestDist = Int.MAX_VALUE
+        var bestPos = position
+        for (i in start until end) {
+            if (text[i] == '\n') {
+                val d = kotlin.math.abs(i + 1 - position)
+                if (d < bestDist) { bestDist = d; bestPos = i + 1 }
+            }
+        }
+        return bestPos
     }
 
     /**
