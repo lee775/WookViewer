@@ -19,16 +19,15 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.platform.Typeface as PlatformTypeface
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 
 /** 도구바에서 자주 쓰는 pt 단위 글꼴 크기. */
 private val FONT_SIZES = listOf(8f, 9f, 10f, 11f, 12f, 14f, 16f, 18f, 20f, 24f, 28f, 32f, 36f, 48f, 72f)
@@ -37,17 +36,31 @@ private val FONT_SIZES = listOf(8f, 9f, 10f, 11f, 12f, 14f, 16f, 18f, 20f, 24f, 
 private const val PREVIEW_SAMPLE = "가나다 AaBb 123"
 
 /**
- * Android [android.graphics.Typeface.create] 로 매핑 시도 → Compose FontFamily 변환.
- * 매핑 실패 시 Android 기본 폰트로 대체되지만 호출은 안전.
+ * 미리보기 텍스트 — 해당 글꼴로 렌더링.
+ * Compose 의 platform Typeface API 가 우리 버전에서 public 이 아니라
+ * AndroidView + TextView 로 우회. Android Typeface.create 가 매핑 못하면
+ * 시스템 폴백 폰트 사용 (이름만 표시되고 모양은 기본).
  */
 @Composable
-private fun rememberPreviewFontFamily(fontName: String): FontFamily {
-    return remember(fontName) {
-        runCatching {
-            val tf = android.graphics.Typeface.create(fontName, android.graphics.Typeface.NORMAL)
-            FontFamily(PlatformTypeface(tf))
-        }.getOrDefault(FontFamily.Default)
-    }
+private fun FontPreviewText(fontName: String, textColorArgb: Int) {
+    AndroidView(
+        factory = { ctx ->
+            android.widget.TextView(ctx).apply {
+                text = PREVIEW_SAMPLE
+                textSize = 14f
+                setTextColor(textColorArgb)
+                typeface = android.graphics.Typeface.create(
+                    fontName, android.graphics.Typeface.NORMAL
+                )
+            }
+        },
+        update = { tv ->
+            tv.typeface = android.graphics.Typeface.create(
+                fontName, android.graphics.Typeface.NORMAL
+            )
+            tv.setTextColor(textColorArgb)
+        }
+    )
 }
 
 /** 기본 팔레트 — 자동 + 8 색상. 3 행 × 3 열 격자. */
@@ -99,6 +112,7 @@ fun FontNameDropdown(
                 enabled = false
             )
         } else {
+            val previewColorArgb = MaterialTheme.colorScheme.onSurface.toArgb()
             fonts.forEach { name ->
                 DropdownMenuItem(
                     text = {
@@ -110,14 +124,10 @@ fun FontNameDropdown(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1
                             )
-                            // 미리보기 — 해당 글꼴로 렌더링 시도. Android Typeface.create 가
-                            // 매핑 못 하면 기본 폰트로 대체되지만 매핑 가능한 글꼴은 시각적 확인 가능.
-                            Text(
-                                text = PREVIEW_SAMPLE,
-                                fontSize = 16.sp,
-                                fontFamily = rememberPreviewFontFamily(name),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1
+                            // 미리보기 — 해당 글꼴로 렌더링 (AndroidView/TextView 우회)
+                            FontPreviewText(
+                                fontName = name,
+                                textColorArgb = previewColorArgb
                             )
                         }
                     },
