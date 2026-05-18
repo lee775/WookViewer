@@ -38,6 +38,7 @@ import com.wook.viewer.domain.model.ThemeMode
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onOpenLicenses: () -> Unit = {},
     vm: SettingsViewModel = hiltViewModel()
 ) {
     val settings by vm.settings.collectAsState()
@@ -69,7 +70,7 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(16.dp))
-        AppInfoSection()
+        AppInfoSection(onOpenLicenses = onOpenLicenses)
     }
 }
 
@@ -140,7 +141,7 @@ private fun SettingsRadioRow(
 }
 
 @Composable
-private fun AppInfoSection() {
+private fun AppInfoSection(onOpenLicenses: () -> Unit) {
     val ctx = LocalContext.current
     SectionHeader(stringResource(R.string.settings_app_section))
     Column(
@@ -159,6 +160,27 @@ private fun AppInfoSection() {
             text = BuildInfo.displayLabel(ctx),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp
+        )
+    }
+
+    Spacer(Modifier.height(8.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenLicenses)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "오픈소스 라이선스",
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 15.sp,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = "›",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 20.sp
         )
     }
 }

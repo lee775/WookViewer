@@ -20,6 +20,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.wook.viewer.data.lok.LokSession
 import com.wook.viewer.presentation.filelist.FileListScreen
+import com.wook.viewer.presentation.settings.LicensesScreen
 import com.wook.viewer.presentation.settings.SettingsScreen
 import com.wook.viewer.presentation.theme.WookViewerTheme
 import com.wook.viewer.presentation.viewer.ViewerScreen
@@ -58,6 +59,7 @@ private object Routes {
     const val LIST = "list"
     const val VIEWER = "viewer?uri={uri}"
     const val SETTINGS = "settings"
+    const val LICENSES = "licenses"
     fun viewer(uri: Uri) = "viewer?uri=${Uri.encode(uri.toString())}"
 }
 
@@ -90,7 +92,13 @@ private fun AppNavHost(initialUri: Uri?) {
             )
         }
         composable(Routes.SETTINGS) {
-            SettingsScreen(onBack = { nav.popBackStack() })
+            SettingsScreen(
+                onBack = { nav.popBackStack() },
+                onOpenLicenses = { nav.navigate(Routes.LICENSES) }
+            )
+        }
+        composable(Routes.LICENSES) {
+            LicensesScreen(onBack = { nav.popBackStack() })
         }
     }
 }
