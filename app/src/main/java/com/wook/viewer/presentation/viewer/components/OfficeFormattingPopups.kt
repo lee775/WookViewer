@@ -198,7 +198,7 @@ fun ColorPaletteDropdown(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     row.forEach { entry ->
-                        ColorSwatch(entry = entry, onClick = {
+                        ColorSwatch(entry = entry, mode = mode, onClick = {
                             onSelect(entry.rgb)
                             onDismissRequest()
                         })
@@ -213,13 +213,24 @@ fun ColorPaletteDropdown(
 }
 
 @Composable
-private fun ColorSwatch(entry: PaletteEntry, onClick: () -> Unit) {
+private fun ColorSwatch(entry: PaletteEntry, mode: String, onClick: () -> Unit) {
     val isAuto = entry.rgb == -1L
     val color = if (isAuto) Color.Transparent
-    else Color(0xFF000000 or entry.rgb).copy(alpha = 1f).let {
-        // Long → ARGB Color (0xFFRRGGBB)
-        Color(0xFF000000 or (entry.rgb and 0xFFFFFFL))
+    else Color(0xFF000000 or (entry.rgb and 0xFFFFFFL))
+
+    // font 모드: 글자에 색을 입혀 surfaceVariant 배경에 표시
+    // back 모드: 글자는 검정, 배경에 색을 입힘 (실제 형광펜 효과와 동일)
+    val tileBg = when {
+        isAuto -> MaterialTheme.colorScheme.surface
+        mode == "back" -> color
+        else -> MaterialTheme.colorScheme.surfaceVariant
     }
+    val textColor = when {
+        isAuto -> MaterialTheme.colorScheme.onSurface
+        mode == "back" -> Color.Black
+        else -> color
+    }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -231,15 +242,18 @@ private fun ColorSwatch(entry: PaletteEntry, onClick: () -> Unit) {
     ) {
         Box(
             modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(if (isAuto) MaterialTheme.colorScheme.surface else color)
-                .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+                .size(36.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(tileBg)
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp)),
             contentAlignment = Alignment.Center
         ) {
-            if (isAuto) {
-                Text("자동", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
+            Text(
+                text = if (isAuto) "자동" else "가",
+                fontSize = if (isAuto) 10.sp else 20.sp,
+                color = textColor,
+                fontWeight = FontWeight.Bold
+            )
         }
         Text(
             entry.label,
