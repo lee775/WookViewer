@@ -25,3 +25,4 @@ local.properties
 # LibreOffice assets (services.rdb, types, registry) — 같이 별도 산출
 /app/src/main/assets/
 이거.txt
+keystore-backup/
