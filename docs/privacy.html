@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>욱뷰어 (WookViewer) 개인정보 처리방침</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+                 "Pretendard", "Noto Sans KR", sans-serif;
+    max-width: 720px;
+    margin: 40px auto;
+    padding: 0 20px 60px;
+    line-height: 1.7;
+    color: #222;
+    background: #fafafa;
+  }
+  h1 { font-size: 22px; border-bottom: 2px solid #1976D2; padding-bottom: 6px; }
+  h2 { font-size: 17px; margin-top: 32px; color: #1976D2; }
+  h3 { font-size: 15px; margin-top: 18px; }
+  p, li { font-size: 14px; }
+  ul { padding-left: 20px; }
+  code { background: #eee; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+  .meta { color: #666; font-size: 13px; margin-bottom: 24px; }
+  .highlight {
+    background: #fff8e1;
+    border-left: 3px solid #ffb300;
+    padding: 8px 12px;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  hr { border: none; border-top: 1px solid #ddd; margin: 32px 0; }
+  a { color: #1976D2; }
+</style>
+</head>
+<body>
+
+<h1>욱뷰어 (WookViewer) 개인정보 처리방침</h1>
+<p class="meta">최종 수정일: 2026년 5월</p>
+
+<div class="highlight">
+요약: 욱뷰어는 어떠한 개인정보도 수집·저장·전송하지 않습니다.
+인터넷 연결을 사용하지 않으며 광고·분석 도구도 포함하지 않습니다.
+</div>
+
+<h2>1. 수집하는 개인정보</h2>
+<p>욱뷰어 앱은 사용자로부터 어떠한 개인정보도 수집하지 않습니다. 구체적으로:</p>
+<ul>
+  <li>이름·이메일·전화번호·주소 등 식별 정보: <strong>수집 안 함</strong></li>
+  <li>광고 식별자 (Advertising ID): <strong>사용 안 함</strong></li>
+  <li>위치 정보: <strong>수집 안 함</strong></li>
+  <li>연락처·통화 기록·SMS: <strong>접근 안 함</strong></li>
+  <li>카메라·마이크: <strong>사용 안 함</strong></li>
+  <li>사용 행태 분석 (Analytics): <strong>사용 안 함</strong></li>
+  <li>크래시 리포트 외부 전송: <strong>전송 안 함</strong></li>
+</ul>
+
+<h2>2. 앱이 사용하는 권한</h2>
+<p>앱이 시스템에 요청하는 권한은 <strong>없습니다</strong>. AndroidManifest 에 어떤
+<code>uses-permission</code> 도 선언하지 않습니다.</p>
+<p>파일 접근은 Android 표준 SAF(Storage Access Framework) 를 통해 사용자가 직접
+파일을 선택할 때마다 시스템이 일회성 권한을 부여하는 방식으로 동작합니다. 앱이
+저장소 전체에 자유롭게 접근하지 않습니다.</p>
+
+<h2>3. 인터넷 사용</h2>
+<p>욱뷰어는 인터넷에 연결되지 않습니다. <code>INTERNET</code> 권한을 요청하지
+않으며 어떤 외부 서버와도 통신하지 않습니다. 광고 네트워크·분석 SDK·푸시 알림
+서비스가 모두 포함되어 있지 않습니다.</p>
+
+<h2>4. 기기에 저장되는 데이터</h2>
+<p>모든 데이터는 사용자의 기기 내부에만 저장되며 외부로 전송되지 않습니다.</p>
+
+<h3>4.1 앱 내부 데이터베이스 (Room)</h3>
+<ul>
+  <li><strong>최근 문서 목록</strong>: 사용자가 연 문서의 URI, 표시 이름, 마지막 열람 시각. 앱 내부 저장소에만 보관.</li>
+  <li><strong>북마크</strong>: 사용자가 추가한 페이지 번호와 메모. 앱 내부 저장소에만 보관.</li>
+  <li><strong>앱 설정</strong>: 테마·글자 크기 등의 환경설정.</li>
+</ul>
+<p>이 데이터는 앱 삭제 시 함께 제거됩니다.</p>
+
+<h3>4.2 캐시 디렉터리</h3>
+<ul>
+  <li><strong>문서 임시 파일</strong>: Office 파일 편집 시 LibreOffice 가 임시 작업 파일을 생성합니다. 문서를 닫으면 삭제됩니다.</li>
+  <li><strong>비트맵 캐시</strong>: 페이지 렌더링 결과 일부를 메모리/디스크에 캐시합니다. 앱 재실행 시 삭제될 수 있습니다.</li>
+</ul>
+
+<h3>4.3 로그 파일</h3>
+<ul>
+  <li>디버깅 목적의 로그가 <code>외부저장소/Downloads/WookViewer/</code> 폴더에 텍스트 파일로 저장됩니다.</li>
+  <li>이 파일은 사용자의 기기 안에만 존재하며 외부로 자동 전송되지 않습니다.</li>
+  <li>사용자가 직접 파일을 열어 내용을 확인할 수 있으며, 언제든 삭제할 수 있습니다.</li>
+</ul>
+
+<h2>5. 제3자 공유</h2>
+<p>욱뷰어는 어떠한 데이터도 제3자와 공유하지 않습니다. 외부 SDK 가 포함되어 있지
+않으며 데이터를 외부로 전송하는 코드 경로가 존재하지 않습니다.</p>
+
+<h2>6. 어린이 보호</h2>
+<p>욱뷰어는 만 13세 미만 어린이를 대상으로 하는 앱이 아닙니다. 그러나 어떤 데이터도
+수집하지 않으므로 어린이를 포함한 모든 연령대가 안심하고 사용할 수 있습니다.</p>
+
+<h2>7. 보안</h2>
+<p>외부와 통신하지 않고 데이터를 수집하지 않으므로, 네트워크를 통한 정보 유출 위험이
+구조적으로 존재하지 않습니다. 비밀번호 보호 문서(PDF / Office / HWPX) 의 비밀번호는
+복호화 직후 메모리에서만 사용되며 저장되지 않습니다.</p>
+
+<h2>8. 정책 변경</h2>
+<p>본 개인정보 처리방침은 법령·서비스 변경에 따라 갱신될 수 있습니다. 변경 시 본
+페이지 상단의 "최종 수정일" 이 갱신되며, 중요한 변경은 앱 업데이트 노트에서도
+공지합니다.</p>
+
+<h2>9. 오픈소스 라이선스</h2>
+<p>이 앱은 다음 오픈소스 소프트웨어를 사용하며, 앱 내 "설정 → 오픈소스 라이선스"
+화면에서 전체 목록과 라이선스 정보를 확인할 수 있습니다.</p>
+<ul>
+  <li>LibreOffice (LGPL v3 / MPL v2)</li>
+  <li>Apache POI, XMLBeans, PdfBox-Android (Apache License 2.0)</li>
+  <li>hwplib, hwpxlib, hwpxlib_ext (Apache License 2.0)</li>
+  <li>Bouncy Castle, Kotlin, Jetpack Compose, Hilt, Room, Coil, Timber</li>
+</ul>
+
+<h2>10. 문의</h2>
+<p>본 앱 및 본 처리방침에 관한 문의는 GitHub Issues 를 이용해 주십시오.</p>
+<ul>
+  <li>GitHub: <a href="https://github.com/lee775/WookViewer">github.com/lee775/WookViewer</a></li>
+</ul>
+
+<hr>
+<p class="meta">© 2026 WookViewer. 본 앱은 비상업적 목적의 개인 프로젝트로 배포됩니다.</p>
+
+</body>
+</html>
