@@ -126,6 +126,9 @@ fun ViewerScreen(
     var noticeDismissed by rememberSaveable(state.document?.uri?.toString() ?: "") {
         mutableStateOf(false)
     }
+    var hwpNoticeDismissed by rememberSaveable(state.document?.uri?.toString() ?: "") {
+        mutableStateOf(false)
+    }
     var showLimitationsDialog by rememberSaveable { mutableStateOf(false) }
     var showBookmarksSheet by rememberSaveable { mutableStateOf(false) }
     var showShareSheet by rememberSaveable { mutableStateOf(false) }
@@ -194,6 +197,8 @@ fun ViewerScreen(
     // LOK 렌더러는 모든 포맷을 비트맵으로 그림 — TEXT_ONLY 분기 우회
     val isTextDisplay = (isTextFormat || isPdfTextMode) && !state.useBitmapRendering
     val showBanner = isTextFormat && !noticeDismissed && state.error == null && !state.searchActive
+    val isHwpFormat = format == DocumentFormat.HWP || format == DocumentFormat.HWPX
+    val showHwpNotice = isHwpFormat && !hwpNoticeDismissed && state.error == null && !state.searchActive
 
     val isDarkBitmap = !isTextDisplay
     val bgColor = if (isDarkBitmap) DarkBg else MaterialTheme.colorScheme.background
@@ -311,6 +316,14 @@ fun ViewerScreen(
             RenderingNoticeBanner(
                 onMoreInfo = { showLimitationsDialog = true },
                 onDismiss = { noticeDismissed = true }
+            )
+        }
+
+        if (showHwpNotice) {
+            RenderingNoticeBanner(
+                onMoreInfo = null,
+                onDismiss = { hwpNoticeDismissed = true },
+                message = stringResource(R.string.notice_view_only_hwp)
             )
         }
 

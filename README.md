@@ -1,104 +1,201 @@
-# WookViewer
+# 욱뷰어 (WookViewer)
 
-PDF · DOCX · PPTX · HWP/HWPX 문서를 모바일에서 보기 위한 Android 뷰어 앱.
+한국 사용자를 위한 통합 문서 뷰어 / 편집기 — PDF · DOCX · PPTX · XLSX · HWP · HWPX · 텍스트 · 이미지를 한 앱에서.
 
-## 현재 상태 (v0.4.9 — 욱뷰어 브랜드 + 이미지 + xlsx)
+> **v1.0.3** (2026-05) — 원스토어 정식 출시. 외부 통신 없음 · 광고 없음 · 권한 0개.
 
-앱 이름: **욱뷰어**, 아이콘: 강아지 🐕
+[![Privacy Policy](https://img.shields.io/badge/privacy-policy-blue)](https://lee775.github.io/WookViewer/privacy.html)
+[![License: LGPL/Apache-2.0](https://img.shields.io/badge/libs-LGPL%20%2F%20Apache--2.0-green)](#-라이선스)
 
-| 포맷 | 상태 |
-|---|---|
-| PDF | ✅ FULL — 원본 그대로 + 핀치/더블탭 줌 |
-| HWP / HWPX | ✅ TEXT_ONLY — 길게 눌러 선택/복사 |
-| DOCX | ✅ TEXT_ONLY — 외부 라이브러리 0개 |
-| PPTX | ✅ TEXT_ONLY — 슬라이드 1개 = 페이지 1개 |
-| **XLSX** | ✅ TEXT_ONLY — 시트 1개 = 페이지 1개, 셀 탭/행 newline |
-| Markdown | ✅ TEXT_ONLY — `.md`/`.markdown` 평문 |
-| 일반 텍스트 | ✅ TEXT_ONLY — `.txt`/`.csv`/`.json`/`.xml`/`.yaml`/... 13종 |
-| **이미지** | ✅ FULL — `.jpg`/`.png`/`.gif`/`.webp`/`.heic`/`.bmp`, EXIF 회전 자동, 줌 |
-| DOC / PPT / XLS (구형) | 🚫 명시적 미지원 |
+---
 
-### v0.4.9 변경
-- 앱 아이콘 + 이름 "욱뷰어"로 변경
-- 이미지 뷰어 추가 (단일 페이지, 줌, EXIF 회전)
-- XLSX 추가 (sharedStrings + sheet*.xml 자체 파싱, 외부 라이브러리 0개)
-- 파일 연결 강화 — 외부 앱 "공유/열기" 메뉴에 욱뷰어 표시되도록 intent-filter 정비 + Android 11+ `<queries>` 추가
+## 지원 포맷
 
-### v0.4 변경사항
-- **PPTX 슬라이드별 추출** — `ppt/slides/slideN.xml`을 자연수 순(slide1<slide2<…<slide10<slide11)으로 정렬
-- 슬라이드 1개를 페이지 1개로 매핑 (PPTX의 자연스러운 구조)
-- 거대 슬라이드(>1500자)는 `TextPaginator` fallback으로 추가 분할
-- 슬라이드 마스터/레이아웃/노트는 추출 대상 아님 (필터링)
-- `.ppt` 구형 OLE 바이너리 명시적 거부
-- v0.2 안내 배너의 "페이지 번호는 원본과 다를 수 있음" 항목이 슬라이드 재배치 케이스도 커버
+| 분류 | 포맷 | 뷰어 | 편집 |
+|------|------|:---:|:---:|
+| 오피스 | DOCX · PPTX · XLSX | ✅ FULL | ✅ |
+| 오피스 (변환) | ODT · ODS · ODP | ✅ FULL | — |
+| 한국어 | HWP · HWPX | ✅ FULL | 🚫 (보기 전용) |
+| PDF | PDF | ✅ FULL | 🚫 (보기 전용) |
+| 텍스트 | TXT · LOG · CSV · TSV · JSON · XML · YAML · INI · TOML · CONF | ✅ | ✅ |
+| 마크다운 | MD · MARKDOWN | ✅ | ✅ |
+| 이미지 | JPG · PNG · GIF · WebP · BMP · HEIC · HEIF | ✅ FULL | — |
 
-### v0.3 변경사항
-- **DOCX 텍스트 추출** — Apache POI 미사용. `java.util.zip` + `javax.xml SAX`만으로 구현 → APK 사이즈 +0KB
-- 표 → 셀 tab + 행 newline으로 평탄화
-- `.doc` 파일은 명시적으로 `UnsupportedVariant` 던지기
-- HWP에 있던 페이지네이션/Bitmap 렌더 코드를 `render/text/`로 추출 — 모든 TEXT_ONLY 포맷이 공유
+**비밀번호 보호 문서** — PDF, Office (Agile · Standard), HWPX 모두 해제 가능.
 
-### v0.2 변경사항 (Option A)
-- HWP/DOCX 뷰어 상단에 **"텍스트 미리보기 모드"** 안내 배너
-- "자세히" 다이얼로그 — 표/이미지/서식/페이지 한계 4개 항목 명시
-- 분류된 에러 메시지 (암호화/손상/I/O/지원불가/알수없음)
-- 포맷별 로딩 메시지
+---
 
-상세는 [HWP PoC 보고서](docs/HWP_POC_REPORT.md) 참조.
+## 주요 기능
 
-## 실기기 검증
+### 📄 뷰어
+- LibreOffice 엔진 — 원본 레이아웃·서식 그대로
+- 페이지 단위 렌더링 (긴 문서도 끊김 없음)
+- 핀치 줌 / 더블탭 줌 / 페이지 썸네일 그리드
+- 키워드 검색 + 매치 하이라이트
+- PDF 텍스트 모드 (선택·복사·검색)
 
-설치 + 4종 포맷별 체크리스트: [docs/REAL_DEVICE_TESTING.md](docs/REAL_DEVICE_TESTING.md)
+### ✏️ Office 편집 (DOCX / PPTX / XLSX)
+- 한글 입력 (자모 조합)
+- 글꼴 변경 + 미리보기, 크기 (8 ~ 72 pt)
+- 글자색 / 형광펜 + 색상 미리보기
+- 굵게 · 기울임 · 밑줄
+- 정렬 (왼쪽 / 가운데 / 오른쪽 / 양쪽)
+- 글머리 기호 · 번호 매기기
+- 길게 눌러 단어 선택 + 복사 · 붙여넣기 (Android 클립보드)
+- 실행 취소 / 다시 실행
+- 다른 포맷으로 저장 (PDF · ODT · ODP · ODS · 원본 사본)
 
-## 빌드
+### 📝 텍스트 / Markdown 편집
+- TXT · MD 직접 편집 + 저장 + 다른 이름으로 저장
+- 한국어 인코딩 자동 감지 (EUC-KR · CP949 포함)
 
+### 📑 편의 기능
+- 북마크 (페이지 + 메모)
+- 최근 문서 목록
+- PDF 목차 (Outline) 자동 표시
+- XLSX 시트 탭 / PPTX 슬라이드 페이지
+- 파일 / 페이지 텍스트 공유 (Share Intent)
+
+---
+
+## 다운로드
+
+- **원스토어**: 검색 "욱뷰어"
+- **GitHub Releases**: [최신 APK 다운로드](https://github.com/lee775/WookViewer/releases)
+
+**지원 환경**: Android 8.0 (API 26) 이상, 64비트 ARM 기기.
+
+---
+
+## 개발
+
+### 요구사항
+- JDK 17
+- Android SDK 35
+- Gradle 8.9+ (Wrapper 동봉)
+
+### 디버그 빌드
 ```bash
 ./gradlew :app:assembleDebug
 ```
 
-요구사항: JDK 17, Android SDK 35, Gradle 8.9.
+### 릴리즈 빌드
+릴리즈 빌드는 keystore 환경 변수가 필요합니다. 자세한 내용은 `.github/workflows/build-release.yml` 참고.
 
-## 아키텍처
+GitHub Actions 에서 한 번에 빌드:
+```bash
+gh workflow run "Build Release APK"
+gh run download <run-id>
+```
 
+### 아키텍처
 Clean Architecture + MVVM (Jetpack Compose).
 
 ```
-presentation/  ← Compose UI, ViewModels
-domain/        ← 순수 Kotlin: 모델, UseCase, Repository 인터페이스
-data/          ← Room, SAF, Repository 구현
-render/        ← 포맷별 DocumentRenderer 구현 (격리)
-di/            ← Hilt 모듈
+presentation/   Compose UI, ViewModels
+domain/         순수 Kotlin: 모델, UseCase, Repository 인터페이스
+data/           Room, SAF, Repository 구현
+render/         포맷별 DocumentRenderer 구현 (격리)
+  ├─ pdf/       PdfBox-Android
+  ├─ lok/       LibreOfficeKit (DOCX/PPTX/XLSX + ODT/ODS/ODP)
+  ├─ hwp/       hwplib / hwpxlib
+  ├─ text/      평문 + Markdown
+  └─ image/     Coil
+di/             Hilt 모듈
+app/            Application, 진입점
 ```
 
-핵심은 `DocumentRenderer` 인터페이스 (domain/repository)입니다. 새 포맷을 추가할 때:
+새 포맷 추가 절차:
+1. `render/<format>/` 에 `DocumentRenderer` 구현체
+2. `RendererModule.kt` 에 `@Binds @IntoSet` 등록
+3. `DocumentFormat` enum 항목 확인/추가
 
-1. `render/<format>/` 에 `DocumentRenderer` 구현체 작성
-2. `RendererModule.kt` 에 `@Binds @IntoSet` 으로 등록
-3. `DocumentFormat` enum 에 항목이 이미 있는지 확인 (없으면 추가)
+→ 통합 뷰어가 자동으로 인식합니다.
 
-→ 통합 뷰어 화면은 자동으로 새 포맷을 인식합니다.
+---
 
 ## 핵심 라이브러리
 
-- Kotlin 2.0 / Coroutines
-- Jetpack Compose (Material 3, BOM 2024.10)
-- Hilt (DI), Room (recent docs)
-- Storage Access Framework (스코프드 스토리지 정책 준수)
+| 라이브러리 | 버전 | 라이선스 | 용도 |
+|-----------|------|---------|------|
+| Kotlin | 2.0 | Apache 2.0 | 언어 |
+| Jetpack Compose | BOM 2024.10 | Apache 2.0 | UI |
+| Hilt | 2.51 | Apache 2.0 | DI |
+| Room | 2.6 | Apache 2.0 | 로컬 DB |
+| Coil | 2.7 | Apache 2.0 | 이미지 |
+| **LibreOfficeKit** | 24.x | **LGPL v3 / MPL v2** | Office 렌더링/편집 |
+| Apache POI | 5.x | Apache 2.0 | Office 암호 해제 |
+| PdfBox-Android | 2.0 | Apache 2.0 | PDF |
+| hwplib · hwpxlib | latest | Apache 2.0 | HWP |
+| Bouncy Castle | 1.78 | MIT | 암호 |
+| Timber | 5.0 | Apache 2.0 | 로깅 (debug only) |
 
-## 로드맵
+전체 목록은 앱 내 **설정 → 오픈소스 라이선스** 화면에서 확인 가능.
 
-- **v0.1**: PDF + SAF + 최근 목록 + 다크모드  ← 현재
-- **v0.2**: HWP/HWPX (한국 사용자 핵심 기능)
-- **v0.3**: DOCX
-- **v0.4**: PPTX
-- **v0.5**: 검색 / 북마크 / 클라우드 연동
+---
 
-## 알려진 제한 (MVP)
+## 🔐 개인정보 / 보안
 
-- PDF 암호화 문서 미지원 (PdfRenderer 한계 — PdfiumAndroid 도입 시 해결 예정)
-- 텍스트 선택/검색 미구현
-- Gradle Wrapper 스크립트(`gradlew`/`gradlew.bat`) 및 jar 미포함 — `gradle wrapper` 명령으로 한 번 생성 필요
+- 외부 서버에 어떤 데이터도 전송하지 않습니다.
+- `INTERNET` 권한을 비롯해 **어떠한 권한도 요청하지 않습니다**.
+- 광고 SDK · 분석 도구 · 광고 식별자 미사용.
+- 파일 접근은 Android 표준 SAF 일회성 권한.
 
-## 라이선스
+자세한 사항: [개인정보 처리방침](https://lee775.github.io/WookViewer/privacy.html)
 
-내부 프로젝트.
+---
+
+## 📜 라이선스
+
+### 본 앱 코드
+**© 2026 WookViewer**. 비상업적 개인 프로젝트로 배포됩니다.
+
+### 사용 라이브러리
+
+#### LibreOffice (LGPL v3 / MPL v2)
+욱뷰어는 LibreOfficeKit 을 **동적 라이브러리(`.so`)로 링크**하여 사용합니다. LGPL v3 §4 조항에 따라:
+
+- LibreOffice 자체의 소스 코드는 [공식 저장소](https://github.com/LibreOffice/core)에서 받을 수 있습니다.
+- 사용자는 LibreOffice 라이브러리를 호환되는 다른 버전으로 교체할 수 있는 권리를 가집니다.
+- 욱뷰어의 LibreOffice 빌드 스크립트는 별도 저장소 [`lee775/libreoffice-android-build`](https://github.com/lee775/libreoffice-android-build) 에서 확인 가능합니다.
+
+#### Apache POI · hwplib · PdfBox 등 (Apache License 2.0)
+원본 라이선스 표기를 유지하며 사용합니다.
+
+---
+
+## 변경 이력
+
+### v1.0.3 (2026-05-21)
+- HWP·HWPX 보기 전용 안내 배너 추가
+- README 정비 (포맷 표 · 라이브러리 표 · LGPL 컴플라이언스 문구)
+
+### v1.0.2 (2026-05-20)
+- 외부 저장소(Download 폴더)에 로그/크래시 파일 생성 제거
+- 개인정보 처리방침과 동작 일치
+
+### v1.0.1 (2026-05-18)
+- 오픈소스 라이선스 고지 화면 (LGPL §4 컴플라이언스)
+
+### v1.0.0 (2026-05-17)
+- 정식 릴리즈 빌드 (signed) — 원스토어 등록 가능
+- ProGuard 규칙 정비
+
+### v0.9.x
+- Office 편집 모드 (DOCX/PPTX/XLSX) — 한글 입력, 글꼴/색상/정렬/서식
+- 긴 DOCX 페이지별 분할 렌더링
+- 다른 포맷으로 저장 (PDF/ODT/ODP/ODS)
+
+### v0.4.9
+- 욱뷰어 브랜드 + 강아지 아이콘
+- 이미지 뷰어 + XLSX 추가
+
+### v0.1 ~ v0.4
+- PDF, HWP/HWPX, DOCX, PPTX 뷰어 단계적 도입
+
+---
+
+## 문의
+
+- **GitHub Issues**: [github.com/lee775/WookViewer/issues](https://github.com/lee775/WookViewer/issues)
+- 원스토어 앱 상세 페이지 → 개발자 문의

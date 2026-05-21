@@ -94,4 +94,7 @@
     <string name="limitations_item_format">글꼴·크기·색상 등 서식은 일괄 기본값으로 표시</string>
     <string name="limitations_item_pagination">페이지 번호는 원본과 다를 수 있음 (논리 분할)</string>
     <string name="limitations_item_recommend">정확한 원본은 데스크톱에서 원본 편집 프로그램으로 확인하세요.</string>
+
+    <!-- HWP / HWPX / PDF 등 보기 전용 포맷 안내 -->
+    <string name="notice_view_only_hwp">HWP·HWPX는 보기 전용입니다. 편집은 DOCX·PPTX·XLSX·TXT·MD에서 지원됩니다.</string>
 </resources>

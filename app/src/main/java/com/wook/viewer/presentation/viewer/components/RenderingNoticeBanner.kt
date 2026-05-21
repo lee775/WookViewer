@@ -28,9 +28,10 @@ import com.wook.viewer.presentation.theme.BannerFg
 
 @Composable
 fun RenderingNoticeBanner(
-    onMoreInfo: () -> Unit,
+    onMoreInfo: (() -> Unit)?,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    message: String = stringResource(R.string.notice_text_only_short)
 ) {
     Row(
         modifier = modifier
@@ -47,21 +48,23 @@ fun RenderingNoticeBanner(
             modifier = Modifier.size(18.dp)
         )
         Text(
-            text = stringResource(R.string.notice_text_only_short),
+            text = message,
             color = BannerFg,
             fontSize = 12.sp,
             modifier = Modifier.weight(1f)
         )
-        Text(
-            text = stringResource(R.string.action_more_info),
-            color = BannerAccent,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .clickable(onClick = onMoreInfo)
-                .padding(horizontal = 4.dp, vertical = 2.dp)
-        )
-        Spacer(Modifier.width(2.dp))
+        if (onMoreInfo != null) {
+            Text(
+                text = stringResource(R.string.action_more_info),
+                color = BannerAccent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clickable(onClick = onMoreInfo)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            )
+            Spacer(Modifier.width(2.dp))
+        }
         Icon(
             imageVector = Icons.Filled.Close,
             contentDescription = stringResource(R.string.action_dismiss),
