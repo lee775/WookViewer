@@ -197,7 +197,7 @@ fun ViewerScreen(
     // LOK 렌더러는 모든 포맷을 비트맵으로 그림 — TEXT_ONLY 분기 우회
     val isTextDisplay = (isTextFormat || isPdfTextMode) && !state.useBitmapRendering
     val showBanner = isTextFormat && !noticeDismissed && state.error == null && !state.searchActive
-    val isHwpFormat = format == DocumentFormat.HWP || format == DocumentFormat.HWPX
+    val isHwpFormat = format == DocumentFormat.HWP
     val showHwpNotice = isHwpFormat && !hwpNoticeDismissed && state.error == null && !state.searchActive
 
     val isDarkBitmap = !isTextDisplay
