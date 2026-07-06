@@ -1,7 +1,8 @@
 name: Build Release APK
 
 # 정식 서명된 release APK + AAB 빌드.
-# 사전 준비 — generate-keystore 워크플로 실행 후 secret 3 개 설정:
+# 사전 준비 — keystore 는 로컬에서 생성한다: `bash scripts/generate-release-keystore.sh`
+# 그 뒤 출력된 값으로 secret 3 개 설정 (서명키는 CI 에서 만들거나 내보내지 않는다):
 #  - RELEASE_KEYSTORE_BASE64 — base64 인코딩된 jks
 #  - RELEASE_KEYSTORE_PASSWORD — store/key 패스워드
 #  - RELEASE_KEY_ALIAS — key alias (기본 wookviewer)
